@@ -57,7 +57,10 @@ class CameraManager @Inject constructor(
         }, ContextCompat.getMainExecutor(context))
     }
 
+    private var currentScope: CoroutineScope? = null
+
     fun startCapturing(sessionId: String, scope: CoroutineScope) {
+        currentScope = scope
         if (isCapturing) return
         isCapturing = true
         Log.d("CameraManager", "Started explicit capturing loop")
@@ -73,6 +76,7 @@ class CameraManager @Inject constructor(
     fun stopCapturing() {
         isCapturing = false
         captureJob?.cancel()
+        currentScope = null
         Log.d("CameraManager", "Stopped capturing loop")
     }
 
@@ -101,8 +105,8 @@ class CameraManager @Inject constructor(
 
                 override fun onImageSaved(output: ImageCapture.OutputFileResults) {
                     Log.d("CameraManager", "Photo capture succeeded: ${photoFile.absolutePath}")
-                    // Save to DB via Repository
-                    CoroutineScope(Dispatchers.IO).launch {
+                    // Save to DB via Repository using passed scope
+                    currentScope?.launch(Dispatchers.IO) {
                         repository.logMedia(
                             sessionId = sessionId,
                             type = MediaType.IMAGE,

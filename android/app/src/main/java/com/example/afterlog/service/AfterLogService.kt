@@ -41,6 +41,9 @@ class AfterLogService : LifecycleService() {
     lateinit var audioMonitor: AudioMonitor
 
     @Inject
+    lateinit var videoManager: VideoManager
+
+    @Inject
     lateinit var timeManager: TimeManager
 
     private var wakeLock: PowerManager.WakeLock? = null
@@ -94,15 +97,11 @@ class AfterLogService : LifecycleService() {
         // Acquire WakeLock
         acquireWakeLock()
 
-        // Start camera and audio
-        try {
-            cameraManager.bindCamera(this)
-            cameraManager.startCapturing(sessionId, lifecycleScope)
-            Log.d(TAG, "Camera capture loop started")
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to start camera", e)
-        }
+        // NOTE: CameraManager (ImageCapture) disabled - conflicts with VideoManager binding
+        // TODO: Post-hackathon: Merge into unified CameraUseCaseManager
+        Log.d(TAG, "ImageCapture disabled (Video-only mode)")
 
+        // Start Audio Monitoring
         try {
             audioMonitor.startMonitoring(sessionId, lifecycleScope)
             Log.d(TAG, "Audio monitoring started")
@@ -110,8 +109,9 @@ class AfterLogService : LifecycleService() {
             Log.e(TAG, "Failed to start audio monitoring", e)
         }
 
+        // Start Video Recording (Rolling Buffer)
         try {
-            videoManager.bindCamera(this) // Note: CameraManager also binds. Might need confirming check.
+            videoManager.bindCamera(this)
             videoManager.startRecordingLoop(sessionId, lifecycleScope)
             Log.d(TAG, "Video recording loop started")
         } catch (e: Exception) {
@@ -124,12 +124,11 @@ class AfterLogService : LifecycleService() {
     override fun onDestroy() {
         Log.d(TAG, "AfterLogService destroying")
         
-        // Stop recording
-        cameraManager.stopCapturing()
+        // Stop all recording components
         audioMonitor.stopMonitoring()
         videoManager.stopRecording()
         
-        // End session
+        // End session in database
         currentSessionId?.let { sessionId ->
             lifecycleScope.launch {
                 repository.endSession(sessionId)

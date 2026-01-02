@@ -86,10 +86,29 @@ class VideoManager @Inject constructor(
         Log.d("VideoManager", "Starting video loop for session: $sessionId")
 
         scope.launch(Dispatchers.IO) {
+            // Wait for VideoCapture to be bound
+            var items = 0
+            while (videoCapture == null && isActive && isCapturing) {
+                if (items % 10 == 0) Log.d("VideoManager", "Waiting for camera binding...")
+                delay(200)
+                items++
+                // Timeout after 10 seconds
+                if (items > 50) {
+                    Log.e("VideoManager", "Camera binding timeout!")
+                    isCapturing = false
+                    return@launch
+                }
+            }
+
             while (isActive && isCapturing) {
-                recordChunk(sessionId)
+                // CameraX requires Main thread for recording
+                withContext(Dispatchers.Main) {
+                    recordChunk(sessionId)
+                }
                 delay(chunkDurationMillis) 
-                stopCurrentRecording() // Stop to finalize file, then loop will start next
+                withContext(Dispatchers.Main) {
+                    stopCurrentRecording() // Stop to finalize file, then loop will start next
+                }
             }
         }
     }
@@ -149,7 +168,8 @@ class VideoManager @Inject constructor(
         // Copy logic (Snapshot of current buffer)
         val snapshot = tempBuffer.toList()
         
-        CoroutineScope(Dispatchers.IO).launch {
+        // Use GlobalScope for fire-and-forget save operation (acceptable for file I/O)
+        kotlinx.coroutines.GlobalScope.launch(Dispatchers.IO) {
             snapshot.forEach { tempFile ->
                 if (tempFile.exists()) {
                     val timestamp = timeManager.getCurrentTime()
@@ -180,7 +200,8 @@ class VideoManager @Inject constructor(
     fun stopRecording() {
         isCapturing = false
         stopCurrentRecording()
-        // Clean up temp files? Or keep them for next session? 
-        // Better clean up on app close or start.
+        // Clean up ExecutorService to prevent memory leak
+        videoExecutor.shutdown()
+        Log.d("VideoManager", "Video recording stopped and resources released")
     }
 }
