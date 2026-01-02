@@ -48,6 +48,9 @@ class AfterLogService : LifecycleService() {
     @Inject
     lateinit var timeManager: TimeManager
 
+    @Inject
+    lateinit var cameraUseCaseManager: CameraUseCaseManager
+
     private var wakeLock: PowerManager.WakeLock? = null
     private var currentSessionId: String? = null
 
@@ -67,8 +70,9 @@ class AfterLogService : LifecycleService() {
         }
 
         // *CRITICAL FIX*: Start Foreground IMMEDIATELY to prevent crash (Android 12+)
-        // Do not wait for DB or coroutines.
-        startForegroundServiceWithNotification("Initializing...")
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundServiceWithNotification("Initializing AfterLog...")
+        }
 
         // 1. Handle Simulation Actions independently
         if (intent.action == ACTION_SIMULATE_SCREAM) {
@@ -88,12 +92,17 @@ class AfterLogService : LifecycleService() {
     }
 
     private fun handleSimulateAction() {
-        Log.d(TAG, "Simulating Scream Event!")
-        val targetSession = currentSessionId ?: "unknown_session"
+        val targetSession = currentSessionId
+        if (targetSession == null) {
+            Log.e(TAG, "Cannot simulate scream: No active session")
+            showToast("Error: No active session. Please start recording first.")
+            return
+        }
+        
+        Log.d(TAG, "Simulating Scream Event for session: $targetSession")
         videoManager.saveBufferForEvent(targetSession)
         showToast("Simulation: Scream Event Triggered!")
-        // Update notification to show we are recording/active
-        startForegroundServiceWithNotification("Recording active...")
+        updateNotification("Recording active (Event triggered!)")
     }
 
     private fun handleNewSession() {
@@ -110,32 +119,25 @@ class AfterLogService : LifecycleService() {
     }
 
     private fun startRecording(sessionId: String) {
-        // Update Notification to "Recording" state
-        startForegroundServiceWithNotification("Listening for screams...")
+        // Update Notification to "Recording" state using UPDATE method, not startForeground
+        updateNotification("Listening for screams...")
 
         // Acquire WakeLock (Safety: 1 hour timeout to prevent infinite battery drain)
         acquireWakeLock()
 
-        // NOTE: CameraManager (ImageCapture) disabled - conflicts with VideoManager binding
-        // TODO: Post-hackathon: Merge into unified CameraUseCaseManager
-        Log.d(TAG, "ImageCapture disabled (Video-only mode)")
+        // Bind unified camera use cases
+        Log.d(TAG, "Binding Camera Use Cases...")
+        lifecycleScope.launch(Dispatchers.Main) {
+             cameraUseCaseManager.bindToLifecycle(this@AfterLogService)
+        }
 
-        var isAudioStarted = false
-        var isVideoStarted = false
-
         // Start Audio Monitoring
-        // Start Audio Monitoring
-        // Re-enabled: New AudioRecord-based implementation (Stable)
-        // Start Audio Monitoring
-        // Re-enabled: Separate Stream Architecture
-        // AudioMonitor handles Full Audio Log (PCM).
         lifecycleScope.launch(Dispatchers.IO) {
             try {
-                kotlinx.coroutines.delay(1000) // Small delay to let CameraX init first
+                kotlinx.coroutines.delay(500) // Small delay to let system settle
                 audioMonitor.startMonitoring(sessionId, this)
                 withContext(Dispatchers.Main) {
-                    isAudioStarted = true
-                    Log.d(TAG, "Audio monitoring started (Separate Stream)")
+                    Log.d(TAG, "Audio monitoring started")
                 }
             } catch (t: Throwable) {
                 Log.e(TAG, "Audio Init Failed", t)
@@ -144,40 +146,24 @@ class AfterLogService : LifecycleService() {
                 }
             }
         }
-        // Log.d(TAG, "AudioMonitor skipped (Consolidated into Video)")
-        // showToast("Audio Disabled (Emulator Mode)") // Removed
 
         // Start Video Recording (Rolling Buffer)
-        // RE-ENABLED: With Mock Audio, Video is safe to run.
         try {
-            videoManager.bindCamera(this)
-            // Launch in a safe scope to prevent app crash
+            // No need to bind explicitly here, CameraUseCaseManager handles it.
             lifecycleScope.launch(kotlinx.coroutines.CoroutineExceptionHandler { _, e ->
                  Log.e(TAG, "Video Coroutine Crash", e)
                  showToast("Video Crash: ${e.message}")
             }) {
                 videoManager.startRecordingLoop(sessionId, this)
             }
-            isVideoStarted = true
             Log.d(TAG, "Video recording loop started")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to start video recording", e)
             showToast("Video Error: ${e.message}")
         }
-        // showToast("Video Disabled (Audio Test Mode)")
 
-        // 5. Error Handling Policy: Warn user if partial failure
-        // 5. Error Handling Policy: Warn user if partial failure
-        /*
-        if (!isAudioStarted && !isVideoStarted) {
-            Log.e(TAG, "Both Audio and Video failed to start! Stopping service.")
-            showToast("Critical Error: Recording failed to start.")
-            stopSelf()
-            return
-        } else if (!isAudioStarted || !isVideoStarted) {
-            showToast("Warning: Recording started partially (Check logs).")
-        }
-        */
+        // Start Photo Timelapse (if needed, CameraManager logic)
+        cameraManager.startCapturing(sessionId, lifecycleScope)
 
         Log.i(TAG, "Recording started for session: $sessionId")
     }
@@ -193,11 +179,7 @@ class AfterLogService : LifecycleService() {
                     ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
                 )
             } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                // API 29: startForeground takes 3 args, but specific types might be optional or different.
-                // Using 0 (manifest type) is safest if we don't need location.
-                // However, Q introduced usage of types. 'camera' type was added in R?
-                // Checking docs: 'camera' type added in Android 11 (API 30).
-                // So on Q (29), we CANNOT pass FOREGROUND_SERVICE_TYPE_CAMERA.
+                // API 29: startForeground takes 3 args, but specific types might be optional
                 startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MANIFEST)
             } else {
                 startForeground(NOTIFICATION_ID, notification)
@@ -207,6 +189,13 @@ class AfterLogService : LifecycleService() {
              showToast("Error starting service: ${e.message}")
              stopSelf()
         }
+    }
+
+    // Helper to update notification without restarting foreground service
+    private fun updateNotification(contentText: String) {
+        val notification = createNotification(contentText)
+        val notificationManager = getSystemService(NotificationManager::class.java)
+        notificationManager.notify(NOTIFICATION_ID, notification)
     }
 
     private fun showToast(message: String) {
@@ -223,7 +212,8 @@ class AfterLogService : LifecycleService() {
         audioMonitor.stopMonitoring()
         videoManager.stopRecording()
         cameraManager.stopCapturing()
-        cameraManager.shutdown()
+        
+        cameraUseCaseManager.shutdown()
         
         // End session in database
         currentSessionId?.let { sessionId ->
@@ -280,7 +270,7 @@ class AfterLogService : LifecycleService() {
                 PowerManager.PARTIAL_WAKE_LOCK,
                 "AfterLog::RecordingWakeLock"
             ).apply {
-                acquire(4 * 60 * 60 * 1000L) // 2. Increased timeout to 4 hours (Safe for long sessions)
+                acquire(4 * 60 * 60 * 1000L) // 4 hours (Safe for long sessions)
             }
             Log.d(TAG, "WakeLock acquired")
         } catch (e: Exception) {
@@ -290,15 +280,19 @@ class AfterLogService : LifecycleService() {
 
     private fun releaseWakeLock() {
         try {
-            wakeLock?.let {
-                if (it.isHeld) {
-                    it.release()
+            wakeLock?.let { lock ->
+                if (lock.isHeld) {
+                    lock.release()
                     Log.d(TAG, "WakeLock released")
+                } else {
+                     Log.w(TAG, "WakeLock already released")
                 }
             }
+        } catch (e: RuntimeException) {
+            // release() double call safe guard across threads
+            Log.e(TAG, "WakeLock release failed (already released?)", e)
+        } finally {
             wakeLock = null
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to release WakeLock", e)
         }
     }
 }

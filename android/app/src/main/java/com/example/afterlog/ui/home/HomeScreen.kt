@@ -144,9 +144,14 @@ fun HomeScreen(
                 }
 
                 if (allGranted) {
-                    val intent = Intent(context, AfterLogService::class.java).apply {
-                        putExtra(AfterLogService.EXTRA_SESSION_ID, UUID.randomUUID().toString())
-                    }
+                    val intent = Intent(context, AfterLogService::class.java)
+                    // Only generate new session ID if we are NOT already running
+                    // (Though button is disabled if isServiceRunning is true, this handles edge cases)
+                    // Start service without ID -> Service will generate new session and insert to DB
+                    // if (!isServiceRunning) {
+                    //    intent.putExtra(AfterLogService.EXTRA_SESSION_ID, UUID.randomUUID().toString())
+                    // }
+                    
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                         context.startForegroundService(intent)
                     } else {

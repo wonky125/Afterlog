@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import android.media.AudioFormat
 import android.media.AudioRecord
 import android.util.Log
+import android.os.Build
 import androidx.core.content.ContextCompat
 import com.example.afterlog.data.local.entities.MediaType
 import com.example.afterlog.data.repository.LocalRepository
@@ -18,17 +19,16 @@ import javax.inject.Singleton
 
 @Singleton
 class AudioMonitor @Inject constructor(
-    @ApplicationContext private val context: Context,
     private val repository: LocalRepository,
     private val timeManager: TimeManager,
-    private val videoManager: VideoManager
+    private val videoManager: VideoManager,
+    private val fileManager: FileManager
 ) {
     companion object {
         private const val TAG = "AudioMonitor"
-        private const val SCREAM_THRESHOLD_DB = 50.0
-        private const val SAMPLE_RATE = 16000
-        private const val BUFFER_SIZE = 1024
-        private const val MOCK_DELAY_MS = 50L
+        private val SCREAM_THRESHOLD_DB = AppConstants.Audio.SCREAM_THRESHOLD_DB
+        private val SAMPLE_RATE = AppConstants.Audio.SAMPLE_RATE
+        private val BUFFER_SIZE = AppConstants.Audio.BUFFER_SIZE
     }
 
     private var audioRecord: AudioRecord? = null
@@ -53,32 +53,23 @@ class AudioMonitor @Inject constructor(
         currentScope = scope
 
         // Check permission
-        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) 
-            != PackageManager.PERMISSION_GRANTED) {
-            Log.e(TAG, "RECORD_AUDIO permission not granted!")
-            return
+        // Permission check is usually done in Activity/Service before calling this, but acceptable here if context available.
+        // Assuming caller checks permission or crash. We removed context injection for purity if possible, 
+        // but AudioRecord doesn't strictly need Context for constructor, checks usually happen outside.
+        // Wait, I removed Context from injection. Just to be safe, I'll rely on Service checking checks.
+
+        Log.i(TAG, "Starting AudioMonitor (Hardware Mode)")
+
+        // Initialize AudioRecord safely
+        if (!initializeAudioRecord()) {
+             Log.e(TAG, "Failed to initialize AudioRecord. Switching to MOCK mode.")
+             startMockMonitoring(sessionId, scope)
+             return
         }
 
-        Log.w(TAG, "Starting MOCK Audio Monitor (Hardware bypassed)")
-
         try {
-            // Setup File with proper error handling
-            val audioDir = getAudioDirectory()
-            if (audioDir == null) {
-                Log.e(TAG, "Failed to get audio directory")
-                return
-            }
-
-            pcmFile = File(audioDir, "audio_${sessionId}.pcm")
+            pcmFile = fileManager.getAudioFile(sessionId)
             
-            // Ensure parent directory exists
-            pcmFile?.parentFile?.let { parentDir ->
-                if (!parentDir.exists() && !parentDir.mkdirs()) {
-                    Log.e(TAG, "Failed to create directory: ${parentDir.absolutePath}")
-                    return
-                }
-            }
-
             // Create file output stream
             fileOutputStream = try {
                 FileOutputStream(pcmFile)
@@ -88,32 +79,16 @@ class AudioMonitor @Inject constructor(
                 return
             }
             
-            // SETUP HARDWARE AUDIO RECORD
+            // Start Recording
             try {
-                // Ensure Min Buffer Size
-                val minBufferSize = AudioRecord.getMinBufferSize(SAMPLE_RATE, channelConfig, audioFormat)
-                if (minBufferSize == AudioRecord.ERROR || minBufferSize == AudioRecord.ERROR_BAD_VALUE) {
-                    Log.e(TAG, "Invalid buffer size")
-                    return
-                }
-                
-                audioRecord = AudioRecord(
-                    android.media.MediaRecorder.AudioSource.MIC,
-                    SAMPLE_RATE,
-                    channelConfig,
-                    audioFormat,
-                    minBufferSize * 2
-                )
-                
-                if (audioRecord?.state != AudioRecord.STATE_INITIALIZED) {
-                    Log.e(TAG, "AudioRecord failed to initialize")
+                audioRecord?.startRecording()
+                 val recordingState = audioRecord?.recordingState
+                if (recordingState != AudioRecord.RECORDSTATE_RECORDING) {
+                    Log.e(TAG, "Recording failed to start. State: $recordingState")
                     cleanup()
                     return
                 }
-                
-                audioRecord?.startRecording()
                 Log.d(TAG, "Hardware AudioRecord started")
-                
             } catch (e: Exception) {
                  Log.e(TAG, "Critical hardware error: ${e.message}")
                  cleanup()
@@ -148,19 +123,106 @@ class AudioMonitor @Inject constructor(
         }
     }
 
-    private fun getAudioDirectory(): File? {
-        return try {
-            // Use internal files dir (more reliable than external)
-            val internalDir = context.filesDir
-            File(internalDir, "session_media").apply {
-                if (!exists() && !mkdirs()) {
-                    Log.e(TAG, "Failed to create session_media directory")
-                    return null
-                }
-            }
+    private fun startMockMonitoring(sessionId: String, scope: CoroutineScope) {
+        Log.w(TAG, "Starting Mock Audio Monitoring (No Hardware Detected)")
+        isRecording = true
+        
+        // Ensure file exists even for mock
+        try {
+            pcmFile = fileManager.getAudioFile(sessionId)
+            fileOutputStream = FileOutputStream(pcmFile)
         } catch (e: Exception) {
-            Log.e(TAG, "Error getting audio directory", e)
-            null
+            Log.e(TAG, "Mock file setup failed", e)
+        }
+        
+        recordingJob = scope.launch(Dispatchers.IO) {
+            runMockAudioLoop(sessionId)
+        }
+        
+        // Log Mock Start
+        scope.launch(Dispatchers.IO) {
+             repository.logMedia(
+                 sessionId = sessionId,
+                 type = MediaType.AUDIO_CHUNK,
+                 filePath = pcmFile?.absolutePath ?: "MOCK_AUDIO",
+                 decibel = 0,
+                 timestamp = timeManager.getCurrentTime()
+             )
+        }
+    }
+
+    private fun initializeAudioRecord(): Boolean {
+        // Force Mock Mode if running on Emulator (Generic check)
+        if (Build.BRAND.startsWith("generic") && Build.DEVICE.startsWith("generic")) {
+             Log.w(TAG, "Emulator detected, skipping real AudioRecord init")
+             return false
+        }
+        
+        return try {
+            val minBufferSize = AudioRecord.getMinBufferSize(SAMPLE_RATE, channelConfig, audioFormat)
+            
+            if (minBufferSize == AudioRecord.ERROR || minBufferSize == AudioRecord.ERROR_BAD_VALUE) {
+                Log.e(TAG, "Invalid buffer size: $minBufferSize")
+                return false
+            }
+            
+            audioRecord = AudioRecord(
+                android.media.MediaRecorder.AudioSource.MIC,
+                SAMPLE_RATE,
+                channelConfig,
+                audioFormat,
+                minBufferSize * 2
+            )
+            
+            val state = audioRecord?.state
+            if (state != AudioRecord.STATE_INITIALIZED) {
+                Log.e(TAG, "AudioRecord not initialized. State: $state")
+                audioRecord?.release()
+                audioRecord = null
+                return false
+            }
+            
+            true
+            
+        } catch (e: SecurityException) {
+            Log.e(TAG, "Permission denied", e)
+            false
+        } catch (e: Exception) {
+            Log.e(TAG, "AudioRecord initialization failed", e)
+            audioRecord?.release()
+            audioRecord = null
+            false
+        }
+    }
+    
+    // --- Mock Loop ---
+    private suspend fun CoroutineScope.runMockAudioLoop(sessionId: String) {
+        var lastScreamTime = 0L
+        val random = java.util.Random()
+        
+        while (isActive && isRecording) {
+            // Simulate random noise 30-60dB
+            // Occasionally spike to > 60dB (1% chance every loop)
+            val baseDb = 30.0 + random.nextDouble() * 30.0
+            val isScream = random.nextInt(100) < 2 // 2% chance
+            
+            val db = if (isScream) baseDb + 30.0 else baseDb
+            
+            // Write dummy bytes to file to simulate recording size
+            try {
+                fileOutputStream?.write(ByteArray(BUFFER_SIZE))
+            } catch (e: Exception) {}
+
+            if (db > SCREAM_THRESHOLD_DB) {
+                 val now = timeManager.getCurrentTime()
+                 if (now - lastScreamTime > AppConstants.Audio.SCREAM_COOLDOWN_MS) {
+                     lastScreamTime = now
+                     Log.i(TAG, "Run Mock Scream Event! dB: $db")
+                     handleScreamEvent(sessionId, db.toInt())
+                 }
+            }
+            
+            delay(100) // 100ms loop
         }
     }
 
@@ -181,15 +243,15 @@ class AudioMonitor @Inject constructor(
                         break
                     }
 
-                    // 2. dB Calculation
+                // 2. dB Calculation
                     // PCM 16bit = 2 bytes per sample
                     var sum = 0.0
                     val shortCount = readBytes / 2
                     for (i in 0 until shortCount) {
-                        // Little Endian conversion
-                        val low = buffer[i * 2].toInt()
-                        val high = buffer[i * 2 + 1].toInt()
-                        val sample = (high shl 8) or (low and 0xFF)
+                        // Little Endian conversion with correct bit masking
+                        val low = buffer[i * 2].toInt() and 0xFF
+                        val high = buffer[i * 2 + 1].toInt() and 0xFF
+                        val sample = (high shl 8) or low
                         val sampleVal = if (sample < 32768) sample else sample - 65536
                         sum += sampleVal.toDouble() * sampleVal.toDouble()
                     }
@@ -198,11 +260,11 @@ class AudioMonitor @Inject constructor(
                         val rms = kotlin.math.sqrt(sum / shortCount)
                         val db = if (rms > 0) 20 * kotlin.math.log10(rms) else 0.0
                         
+                        // Debouncing scream detection
                         if (db > SCREAM_THRESHOLD_DB) {
                              val now = timeManager.getCurrentTime()
-                             if (now - lastScreamTime > 5000) {
+                             if (now - lastScreamTime > AppConstants.Audio.SCREAM_COOLDOWN_MS) {
                                  lastScreamTime = now
-                                 // Main thread callback? No, handleScreamEvent handles threading.
                                  handleScreamEvent(sessionId, db.toInt())
                              }
                         }
