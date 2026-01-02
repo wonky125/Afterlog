@@ -89,6 +89,10 @@ class AudioMonitor @Inject constructor(
 
     private fun handleScreamEvent(sessionId: String, db: Int) {
         Log.i("AudioMonitor", "SCREAM DETECTED! dB: $db")
+        
+        // Trigger Video Buffer Save
+        videoManager.saveBufferForEvent(sessionId)
+        
         CoroutineScope(Dispatchers.IO).launch {
             repository.logMedia(
                 sessionId = sessionId,

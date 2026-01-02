@@ -27,6 +27,7 @@ class AfterLogService : LifecycleService() {
         const val CHANNEL_ID = "afterlog_recording_channel"
         const val NOTIFICATION_ID = 1
         const val EXTRA_SESSION_ID = "session_id"
+        const val ACTION_SIMULATE_SCREAM = "com.example.afterlog.action.SIMULATE_SCREAM"
         private const val TAG = "AfterLogService"
     }
 
@@ -57,6 +58,13 @@ class AfterLogService : LifecycleService() {
         val sessionId = intent?.getStringExtra(EXTRA_SESSION_ID)
 
         if (sessionId == null) {
+            // Check for simulation action
+            if (intent?.action == ACTION_SIMULATE_SCREAM) {
+                Log.d(TAG, "Simulating Scream Event!")
+                videoManager.saveBufferForEvent(currentSessionId ?: "unknown_session")
+                return START_STICKY
+            }
+
             Log.e(TAG, "No session ID provided, starting new session")
             lifecycleScope.launch {
                 currentSessionId = repository.startNewSession()
@@ -102,6 +110,14 @@ class AfterLogService : LifecycleService() {
             Log.e(TAG, "Failed to start audio monitoring", e)
         }
 
+        try {
+            videoManager.bindCamera(this) // Note: CameraManager also binds. Might need confirming check.
+            videoManager.startRecordingLoop(sessionId, lifecycleScope)
+            Log.d(TAG, "Video recording loop started")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to start video recording", e)
+        }
+
         Log.i(TAG, "Recording started for session: $sessionId")
     }
 
@@ -111,6 +127,7 @@ class AfterLogService : LifecycleService() {
         // Stop recording
         cameraManager.stopCapturing()
         audioMonitor.stopMonitoring()
+        videoManager.stopRecording()
         
         // End session
         currentSessionId?.let { sessionId ->

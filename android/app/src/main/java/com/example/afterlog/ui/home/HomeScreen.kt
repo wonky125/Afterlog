@@ -104,6 +104,26 @@ fun HomeScreen(
             Text("Stop Recording")
         }
 
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Button(
+            onClick = {
+                val intent = Intent(context, AfterLogService::class.java).apply {
+                    action = AfterLogService.ACTION_SIMULATE_SCREAM
+                }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    context.startForegroundService(intent)
+                } else {
+                    context.startService(intent)
+                }
+                Toast.makeText(context, "Scream Simulated!", Toast.LENGTH_SHORT).show()
+            },
+            enabled = isServiceRunning,
+            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+        ) {
+            Text("DEBUG: Simulate Scream")
+        }
+
         Spacer(modifier = Modifier.height(32.dp))
 
         Button(
