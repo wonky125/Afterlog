@@ -16,8 +16,8 @@ class TimeManager @Inject constructor(
     private val kronosClock: KronosClock = AndroidClockFactory.createKronosClock(
         context,
         object : SyncListener {
-            override fun onSuccess(ticksDelta: Long, responseCacheKey: String) {
-                Log.i("TimeManager", "NTP Sync Success. Delta: $ticksDelta")
+            override fun onSuccess(ticksDelta: Long, responseTimeMs: Long) {
+                Log.i("TimeManager", "NTP Sync Success. Delta: $ticksDelta, ResponseTime: $responseTimeMs")
             }
 
             override fun onError(host: String, throwable: Throwable) {

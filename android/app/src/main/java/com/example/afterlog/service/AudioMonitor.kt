@@ -17,14 +17,15 @@ import kotlin.math.log10
 class AudioMonitor @Inject constructor(
     @ApplicationContext private val context: Context,
     private val repository: LocalRepository,
-    private val timeManager: TimeManager
+    private val timeManager: TimeManager,
+    private val videoManager: VideoManager
 ) {
     private var mediaRecorder: MediaRecorder? = null
     private var recordingJob: Job? = null
     private var isRecording = false
     
-    // Config
-    private val screamThresholdDb = 80.0
+    // Config - Lowered to 50 for emulator testing (production: 80)
+    private val screamThresholdDb = 50.0
 
     fun startMonitoring(sessionId: String, scope: CoroutineScope) {
         if (isRecording) return
@@ -68,13 +69,20 @@ class AudioMonitor @Inject constructor(
                     val maxAmplitude = mediaRecorder?.maxAmplitude ?: 0
                     if (maxAmplitude > 0) {
                         val db = 20 * log10(maxAmplitude.toDouble())
-                        // Debug log (optional)
-                        // Log.v("AudioMonitor", "Current dB: $db")
+                        // Debug log (enabled for testing)
+                        if (db > 40) Log.d("AudioMonitor", "Current dB: $db")
 
+                        // Use configurable threshold (lowered to 50 for testing, default 80)
                         if (db > screamThresholdDb) {
+                            // Send Broadcast to UI (Explicit)
+                            val intent = android.content.Intent("com.example.afterlog.SCREAM_DETECTED")
+                            intent.putExtra("db", db.toInt())
+                            intent.setPackage(context.packageName) // Fix: Explicit Intent for Android 8+
+                            context.sendBroadcast(intent)
+
                             handleScreamEvent(sessionId, db.toInt())
                             // Debounce
-                            delay(2000)
+                            delay(5000) 
                         }
                     }
                     delay(100) // Poll every 100ms
@@ -93,7 +101,8 @@ class AudioMonitor @Inject constructor(
         // Trigger Video Buffer Save
         videoManager.saveBufferForEvent(sessionId)
         
-        CoroutineScope(Dispatchers.IO).launch {
+        // Use GlobalScope for fire-and-forget DB operation
+        kotlinx.coroutines.GlobalScope.launch(Dispatchers.IO) {
             repository.logMedia(
                 sessionId = sessionId,
                 type = MediaType.SCREAM_EVENT,

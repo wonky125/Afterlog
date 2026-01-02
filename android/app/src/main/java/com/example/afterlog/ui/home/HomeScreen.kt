@@ -58,6 +58,33 @@ fun HomeScreen(
         }
     }
 
+    // Scream Detection Feedback
+    var lastScreamDb by remember { mutableStateOf<Int?>(null) }
+    
+    DisposableEffect(Unit) {
+        val receiver = object : android.content.BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                if (intent?.action == "com.example.afterlog.SCREAM_DETECTED") {
+                    val db = intent.getIntExtra("db", 0)
+                    lastScreamDb = db
+                    Toast.makeText(context, "🔊 Sound Detected: ${db}dB", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+        val filter = android.content.IntentFilter("com.example.afterlog.SCREAM_DETECTED")
+        // Use receiver flag if needed (Tiramisu+ require export flag), but for local broad cast implicit is tricky. 
+        // We'll use Context.registerReceiver with standard flags.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            context.registerReceiver(receiver, filter, Context.RECEIVER_EXPORTED)
+        } else {
+            context.registerReceiver(receiver, filter)
+        }
+        
+        onDispose {
+            context.unregisterReceiver(receiver)
+        }
+    }
+
     Column(
         modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.Center,
@@ -68,6 +95,15 @@ fun HomeScreen(
             style = MaterialTheme.typography.headlineMedium,
             color = MaterialTheme.colorScheme.primary
         )
+
+        lastScreamDb?.let { db ->
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                text = "🔊 Last Sound: ${db}dB",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.error
+            )
+        }
 
         Spacer(modifier = Modifier.height(32.dp))
 
