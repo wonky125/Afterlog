@@ -49,8 +49,15 @@ class VideoManager @Inject constructor(
                 
                 // QualitySelector.QUALITY_SD (480p) or HD (720p) to save space/battery?
                 // Let's go with HD (720p) for balance.
+                // Improved Quality Selector with Fallback
+                // Try HD (720p) first, but fallback to SD (480p) if unavailable.
+                val qualitySelector = QualitySelector.from(
+                     Quality.HD,
+                     FallbackStrategy.lowerQualityOrHigherThan(Quality.SD)
+                )
+
                 val recorder = Recorder.Builder()
-                    .setQualitySelector(QualitySelector.from(Quality.HD))
+                    .setQualitySelector(qualitySelector)
                     .build()
                 
                 videoCapture = VideoCapture.withOutput(recorder)
@@ -129,7 +136,7 @@ class VideoManager @Inject constructor(
         
         activeRecording = videoCapture.output
             .prepareRecording(context, outputOptions)
-            // .withAudioEnabled() // Disabled for rolling buffer (avoid mic conflict)
+            // .withAudioEnabled() // DISABLED: Silent Video Only (Separate Stream Arch)
             .start(ContextCompat.getMainExecutor(context)) { recordEvent ->
                 when(recordEvent) {
                     is VideoRecordEvent.Start -> {

@@ -58,6 +58,35 @@ fun HomeScreen(
         }
     }
 
+    // Permission Dialog for "Denied Forever" case
+    var showPermissionRationale by remember { mutableStateOf(false) }
+
+    if (showPermissionRationale) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showPermissionRationale = false },
+            title = { Text("Permissions Required") },
+            text = { Text("AfterLog needs Camera and Microphone permissions to record. Please grant them in Settings.") },
+            confirmButton = {
+                androidx.compose.material3.TextButton(
+                    onClick = {
+                        showPermissionRationale = false
+                        val intent = Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                            data = android.net.Uri.fromParts("package", context.packageName, null)
+                        }
+                        context.startActivity(intent)
+                    }
+                ) {
+                    Text("Open Settings")
+                }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { showPermissionRationale = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
     // Scream Detection Feedback
     var lastScreamDb by remember { mutableStateOf<Int?>(null) }
     
@@ -109,16 +138,36 @@ fun HomeScreen(
 
         Button(
             onClick = {
-                val intent = Intent(context, AfterLogService::class.java).apply {
-                    putExtra(AfterLogService.EXTRA_SESSION_ID, UUID.randomUUID().toString())
+                // Check permissions again before starting
+                val allGranted = permissionsToRequest.all {
+                    ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
                 }
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    context.startForegroundService(intent)
+
+                if (allGranted) {
+                    val intent = Intent(context, AfterLogService::class.java).apply {
+                        putExtra(AfterLogService.EXTRA_SESSION_ID, UUID.randomUUID().toString())
+                    }
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        context.startForegroundService(intent)
+                    } else {
+                        context.startService(intent)
+                    }
+                    isServiceRunning = true
+                    Toast.makeText(context, "Recording Started", Toast.LENGTH_SHORT).show()
                 } else {
-                    context.startService(intent)
+                    // If we are here, it means some permissions are missing.
+                    // If the user previously checked "Don't ask again", the launcher will return immediately with denied.
+                    // We should show a rationale dialog or guide to settings.
+                    // Simple heuristic: If we launch request and it returns denied, we'll suggest settings.
+                    // But here we are just about to launch.
+                    
+                    Toast.makeText(context, "Requesting permissions...", Toast.LENGTH_SHORT).show()
+                    permissionLauncher.launch(permissionsToRequest.toTypedArray())
+                    
+                    // Note: We can't easily detect "Denied Forever" in pure Compose without Activity result callback analysis.
+                    // So we add a fallback: if user clicks "Start" AGAIN and it's still denied, we show the dialog.
+                    showPermissionRationale = true 
                 }
-                isServiceRunning = true
-                Toast.makeText(context, "Recording Started", Toast.LENGTH_SHORT).show()
             },
             enabled = !isServiceRunning
         ) {

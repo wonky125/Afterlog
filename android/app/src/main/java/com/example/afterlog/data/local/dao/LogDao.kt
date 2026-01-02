@@ -15,6 +15,9 @@ interface LogDao {
     @Query("SELECT * FROM media_logs WHERE sessionId = :sessionId ORDER BY timestamp ASC")
     fun getLogsBySession(sessionId: String): Flow<List<MediaLogEntity>>
 
+    @Query("SELECT * FROM media_logs WHERE sessionId = :sessionId ORDER BY timestamp ASC")
+    suspend fun getLogsBySessionSuspend(sessionId: String): List<MediaLogEntity>
+
     @Query("DELETE FROM media_logs WHERE sessionId = :sessionId")
     suspend fun deleteLogsBySession(sessionId: String)
 }
