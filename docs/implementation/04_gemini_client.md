@@ -10,7 +10,8 @@
 - **Parts**:
   - `Text`: System Prompt (Persona: 1920s Investigative Journalist in Arkham).
   - `List<Bitmap>`: Resized image list (max ~50 images).
-  - `File (Blob)`: Audio file (full or highlights).
+  - `FileRef`: **Files API URI** (Large Audio File uploaded via REST).
+    - SDK direct upload is limited (20MB). Full audio requires `https://generativelanguage.googleapis.com/upload/v1beta/files`.
 
 ### Response (AnalysisResultJson)
 ```json
