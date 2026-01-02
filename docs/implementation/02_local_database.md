@@ -54,9 +54,9 @@ data class AnalysisResultEntity(
   - `updateSessionEnd(...)`
 
 ## 4. 구현 우선순위 및 체크리스트
-1. [ ] **Entity 작성**: 3개 테이블 클래스 및 Enum(`MediaType`) 정의.
-2. [ ] **TypeConverter**: `List<String>` 등을 저장하기 위한 컨버터 구현 (필요시).
-3. [ ] **DAO 작성**: 필수 CRUD 쿼리 작성.
-4. [ ] **Database Class**: `RoomDatabase` 상속 클래스 및 Migration 전략(fallbackToDestructiveMigration) 설정.
-5. [ ] **Hilt Module**: `DatabaseModule`에서 `provideLogDao` 등 DI 설정.
-6. [ ] **Repository**: `LocalRepository` 클래스 구현 후 `ViewModel`에서 호출 테스트.
+1. [x] **Entity 작성**: 3개 테이블 클래스 및 Enum(`MediaType`) 정의.
+2. [x] **TypeConverter**: `List<String>` 등을 저장하기 위한 컨버터 구현 (필요시).
+3. [x] **DAO 작성**: 필수 CRUD 쿼리 작성.
+4. [x] **Database Class**: `RoomDatabase` 상속 클래스 및 Migration 전략(fallbackToDestructiveMigration) 설정.
+5. [x] **Hilt Module**: `DatabaseModule`에서 `provideLogDao` 등 DI 설정.
+6. [x] **Repository**: `LocalRepository` 클래스 구현 후 `ViewModel`에서 호출 테스트.

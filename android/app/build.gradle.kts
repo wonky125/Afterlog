@@ -42,7 +42,7 @@ android {
         compose = true
     }
     composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.1"
+        kotlinCompilerExtensionVersion = "1.5.8"
     }
     packaging {
         resources {
@@ -51,9 +51,25 @@ android {
     }
 }
 
+// Fix for JDK 17+ and Kapt (IllegalAccessError)
+kapt {
+    correctErrorTypes = true
+    javacOptions {
+        option("-J--add-opens=jdk.compiler/com.sun.tools.javac.util=ALL-UNNAMED")
+        option("-J--add-opens=jdk.compiler/com.sun.tools.javac.file=ALL-UNNAMED")
+        option("-J--add-opens=jdk.compiler/com.sun.tools.javac.main=ALL-UNNAMED")
+        option("-J--add-opens=jdk.compiler/com.sun.tools.javac.jvm=ALL-UNNAMED")
+        option("-J--add-opens=jdk.compiler/com.sun.tools.javac.processing=ALL-UNNAMED")
+        option("-J--add-opens=jdk.compiler/com.sun.tools.javac.comp=ALL-UNNAMED")
+        option("-J--add-opens=jdk.compiler/com.sun.tools.javac.tree=ALL-UNNAMED")
+        option("-J--add-opens=jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED")
+    }
+}
+
 dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation(libs.androidx.lifecycle.service)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.compose.bom)
     implementation(libs.androidx.ui)
@@ -82,6 +98,9 @@ dependencies {
 
     // Gemini
     implementation(libs.google.generativeai)
+    
+    // NTP Clock
+    implementation(libs.kronos.android)
 
     // Coil
     implementation(libs.coil.compose)
