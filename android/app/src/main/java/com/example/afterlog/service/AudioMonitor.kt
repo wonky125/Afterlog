@@ -23,12 +23,14 @@ class AudioMonitor @Inject constructor(
     private var mediaRecorder: MediaRecorder? = null
     private var recordingJob: Job? = null
     private var isRecording = false
+    private var currentScope: CoroutineScope? = null // Store scope reference for DB operations
     
     // Config - Lowered to 50 for emulator testing (production: 80)
     private val screamThresholdDb = 50.0
 
     fun startMonitoring(sessionId: String, scope: CoroutineScope) {
         if (isRecording) return
+        currentScope = scope // Store for later use in handleScreamEvent
 
         try {
             val audioFile = File(context.getExternalFilesDir(null), "session_media/audio_${sessionId}.m4a")
@@ -101,8 +103,8 @@ class AudioMonitor @Inject constructor(
         // Trigger Video Buffer Save
         videoManager.saveBufferForEvent(sessionId)
         
-        // Use GlobalScope for fire-and-forget DB operation
-        kotlinx.coroutines.GlobalScope.launch(Dispatchers.IO) {
+        // Use stored scope instead of GlobalScope to respect lifecycle
+        currentScope?.launch(Dispatchers.IO) {
             repository.logMedia(
                 sessionId = sessionId,
                 type = MediaType.SCREAM_EVENT,

@@ -127,6 +127,8 @@ class AfterLogService : LifecycleService() {
         // Stop all recording components
         audioMonitor.stopMonitoring()
         videoManager.stopRecording()
+        cameraManager.stopCapturing() // Re-enabled for proper cleanup
+        cameraManager.shutdown() // Release executor
         
         // End session in database
         currentSessionId?.let { sessionId ->
@@ -138,6 +140,9 @@ class AfterLogService : LifecycleService() {
 
         // Release WakeLock
         releaseWakeLock()
+        
+        // Stop foreground service properly
+        stopForeground(STOP_FOREGROUND_REMOVE)
 
         super.onDestroy()
     }

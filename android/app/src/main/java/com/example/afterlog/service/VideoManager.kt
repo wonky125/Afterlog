@@ -12,6 +12,8 @@ import com.example.afterlog.data.local.entities.MediaType
 import com.example.afterlog.data.repository.LocalRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.*
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.io.File
 import java.util.concurrent.ConcurrentLinkedDeque
 import java.util.concurrent.ExecutorService
@@ -34,8 +36,10 @@ class VideoManager @Inject constructor(
     // Rolling Buffer: Stores paths of recent temp files
     // Capacity = 6 (3 minutes worth of 30s chunks)
     private val tempBuffer = ConcurrentLinkedDeque<File>()
+    private val bufferMutex = Mutex() // Thread-safe buffer access
     private val bufferCapacity = 6
     private val chunkDurationMillis = 30_000L
+    private var currentScope: CoroutineScope? = null // Store for lifecycle-aware operations
 
     fun bindCamera(lifecycleOwner: LifecycleOwner) {
         val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
@@ -82,6 +86,7 @@ class VideoManager @Inject constructor(
         if (isCapturing) return
         isCapturing = true
         currentSessionId = sessionId
+        currentScope = scope // Store for saveBufferForEvent
         
         Log.d("VideoManager", "Starting video loop for session: $sessionId")
 
@@ -129,7 +134,8 @@ class VideoManager @Inject constructor(
                 when(recordEvent) {
                     is VideoRecordEvent.Start -> {
                         Log.d("VideoManager", "Started chunk: ${tempFile.name}")
-                        addToBuffer(tempFile)
+                        // addToBuffer is now suspend, call from coroutine
+                        currentScope?.launch { addToBuffer(tempFile) }
                     }
                     is VideoRecordEvent.Finalize -> {
                         if (!recordEvent.hasError()) {
@@ -148,13 +154,15 @@ class VideoManager @Inject constructor(
         activeRecording = null
     }
 
-    private fun addToBuffer(file: File) {
-        tempBuffer.addLast(file)
-        // Trim buffer if exceeding capacity
-        while (tempBuffer.size > bufferCapacity) {
-            val oldFile = tempBuffer.pollFirst()
-            oldFile?.delete()
-            Log.d("VideoManager", "Deleted old chunk: ${oldFile?.name}")
+    private suspend fun addToBuffer(file: File) {
+        bufferMutex.withLock {
+            tempBuffer.addLast(file)
+            // Trim buffer if exceeding capacity
+            while (tempBuffer.size > bufferCapacity) {
+                val oldFile = tempBuffer.pollFirst()
+                oldFile?.delete()
+                Log.d("VideoManager", "Deleted old chunk: ${oldFile?.name}")
+            }
         }
     }
 
@@ -168,8 +176,8 @@ class VideoManager @Inject constructor(
         // Copy logic (Snapshot of current buffer)
         val snapshot = tempBuffer.toList()
         
-        // Use GlobalScope for fire-and-forget save operation (acceptable for file I/O)
-        kotlinx.coroutines.GlobalScope.launch(Dispatchers.IO) {
+        // Use stored scope instead of GlobalScope to respect service lifecycle
+        currentScope?.launch(Dispatchers.IO) {
             snapshot.forEach { tempFile ->
                 if (tempFile.exists()) {
                     val timestamp = timeManager.getCurrentTime()
