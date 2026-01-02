@@ -16,7 +16,7 @@ import javax.inject.Singleton
 class GeminiRepository @Inject constructor() {
 
     private val generativeModel = GenerativeModel(
-        modelName = "gemini-pro-vision", // Or "gemini-1.5-flash" depending on availability
+        modelName = "gemini-1.5-flash", // Updated model for multimodal tasks
         apiKey = BuildConfig.GEMINI_API_KEY
     )
 

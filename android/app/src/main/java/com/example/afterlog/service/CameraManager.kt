@@ -147,7 +147,7 @@ class CameraManager @Inject constructor(
     }
 
     fun shutdown() {
-        cameraExecutor?.shutdown()
+        cameraExecutor?.shutdownNow()
         cameraExecutor = null
     }
 }

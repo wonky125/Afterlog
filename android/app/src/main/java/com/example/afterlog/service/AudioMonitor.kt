@@ -58,7 +58,7 @@ class AudioMonitor @Inject constructor(
         // but AudioRecord doesn't strictly need Context for constructor, checks usually happen outside.
         // Wait, I removed Context from injection. Just to be safe, I'll rely on Service checking checks.
 
-        Log.i(TAG, "Starting AudioMonitor (Hardware Mode)")
+        Log.i(TAG, "Starting AudioMonitor (Standard Mode)")
 
         // Initialize AudioRecord safely
         if (!initializeAudioRecord()) {

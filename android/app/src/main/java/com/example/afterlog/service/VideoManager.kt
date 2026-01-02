@@ -138,7 +138,7 @@ class VideoManager @Inject constructor(
                         is VideoRecordEvent.Start -> {
                             Log.d("VideoManager", "Started chunk: ${tempFile.name}")
                             // addToBuffer is now suspend, call from coroutine
-                            currentScope?.launch { addToBuffer(tempFile) }
+                            currentScope?.launch { addToBuffer(tempFile) } ?: Log.w("VideoManager", "Scope null, skip buffer add")
                         }
                         is VideoRecordEvent.Finalize -> {
                             if (!recordEvent.hasError()) {
@@ -220,5 +220,10 @@ class VideoManager @Inject constructor(
         stopCurrentRecording()
         // Clean up temp files? No, keep rolling buffer until end of session or explicit clear.
         Log.d("VideoManager", "Video recording stopped")
+        // Cleanup old buffer files to save space
+        activeRecording = null
+        // Note: We don't delete files here to allow post-session analysis if needed, 
+        // but for safety we can clear the memory reference.
+        tempBuffer.clear()
     }
 }

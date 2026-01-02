@@ -213,6 +213,9 @@ class AfterLogService : LifecycleService() {
         videoManager.stopRecording()
         cameraManager.stopCapturing()
         
+        cameraManager.stopCapturing()
+        cameraManager.shutdown()
+        
         cameraUseCaseManager.shutdown()
         
         // End session in database
@@ -270,7 +273,7 @@ class AfterLogService : LifecycleService() {
                 PowerManager.PARTIAL_WAKE_LOCK,
                 "AfterLog::RecordingWakeLock"
             ).apply {
-                acquire(4 * 60 * 60 * 1000L) // 4 hours (Safe for long sessions)
+                acquire(2 * 60 * 60 * 1000L) // 2 hours (Safety reduced from 4h)
             }
             Log.d(TAG, "WakeLock acquired")
         } catch (e: Exception) {
