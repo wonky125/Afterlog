@@ -32,12 +32,12 @@
   ```
 
 ## 5. 구현 우선순위 및 체크리스트
-1. [ ] **프로젝트 생성 확인**: 패키지명 `com.afterlog.app` (예시)
-2. [ ] **Dependencies 추가**: `build.gradle.kts`에 위 라이브러리 일괄 추가 및 Sync.
-3. [ ] **Hilt Setup**: 
+1. [x] **프로젝트 생성 확인**: 패키지명 `com.afterlog.app` (예시)
+2. [x] **Dependencies 추가**: `build.gradle.kts`에 위 라이브러리 일괄 추가 및 Sync.
+3. [x] **Hilt Setup**: 
    - `AfterLogApplication` 클래스 생성 (`@HiltAndroidApp`).
    - `MainActivity`에 `@AndroidEntryPoint` 추가.
-4. [ ] **Theme Setup**: 
+4. [x] **Theme Setup**: 
    - `IMPLEMENTATION_GUIDE.md`의 팔레트 적용 (`Blood Red`, `Deep Black`).
    - `Type.kt`에 커스텀 폰트(세리프 계열) 설정.
-5. [ ] **Navigation Shell**: 빈 Composable을 연결하여 앱 실행 시 크래시 없는지 확인.
+5. [x] **Navigation Shell**: 빈 Composable을 연결하여 앱 실행 시 크래시 없는지 확인.

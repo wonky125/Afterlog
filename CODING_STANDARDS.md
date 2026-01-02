@@ -122,3 +122,25 @@ com.example.afterlog
     ├── theme       (Color, Type)
     └── components  (재사용 버튼, 카드 등)
 ```
+
+---
+
+## 🏆 5. Hackathon Specific Rules (Special)
+
+### 🇺🇸 5.1 English-First Policy
+**Rule**: This project is for an International Hackathon.
+- **UI Strings**: MUST be in English (use `strings.xml`).
+- **Code Comments**: English ONLY.
+- **Commit Messages**: English ONLY.
+- **Internal Docs**: Korean is allowed for team communication, but final artifacts must be English.
+
+### 🤖 5.2 Gemini Integration Safety
+**Rule**: AI features must fail gracefully.
+- **No Hardcoding**: API Keys must be in `local.properties` (BuildConfig).
+- **Graceful Failure**: If Gemini fails (Network/Safety), show a fallback UI or error message. Do NOT crash.
+- **Mock Mode**: Implement a "Mock Data" logic for testing without using API quota.
+
+### 🖥️ 5.3 Compose Preview Rule
+**Rule**: Accelerate UI Dev.
+- All Screen-level Composables MUST have a `@Preview` with dummy data.
+- Use `PreviewParameterProvider` for complex data.
