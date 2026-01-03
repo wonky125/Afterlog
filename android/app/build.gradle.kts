@@ -16,7 +16,7 @@ if (localPropertiesFile.exists()) {
 val geminiApiKey = localProperties.getProperty("GEMINI_API_KEY") ?: ""
 
 android {
-    namespace = "com.example.afterlog"
+    namespace = "com.hackathon.afterlog"
     compileSdk = 34
 
     defaultConfig {
