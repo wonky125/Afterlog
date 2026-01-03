@@ -1,6 +1,6 @@
 package com.hackathon.afterlog.feature.report
 
-import androidx.compose.foundation.background
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -8,205 +8,287 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
-import coil.compose.AsyncImage
+import com.hackathon.afterlog.data.local.entities.MediaLogEntity
+import com.hackathon.afterlog.data.model.GeminiReport
+import com.hackathon.afterlog.data.model.TimelineEvent
 import com.hackathon.afterlog.feature.result.GameResultViewModel
 import com.hackathon.afterlog.feature.result.ResultUiState
-import java.io.File
+import com.hackathon.afterlog.ui.components.*
+import com.hackathon.afterlog.ui.theme.NewspaperColors
+import com.hackathon.afterlog.ui.theme.NewspaperTypography
+import com.hackathon.afterlog.ui.theme.LoraFamily
+import com.hackathon.afterlog.ui.theme.SpecialEliteFamily
+import kotlinx.coroutines.delay
 
 @Composable
 fun ReportDetailScreen(
     viewModel: GameResultViewModel = hiltViewModel(),
-    sessionId: String = "last_session" 
+    sessionId: String = "last_session"
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    var showLoadingScreen by remember { mutableStateOf(true) }
 
+    // This effect ensures a minimum loading time for cinematic effect
+    // and triggers data loading.
     LaunchedEffect(sessionId) {
+        // Show loading for at least 3 seconds
+        val minLoadingTime = 3000L
+        val startTime = System.currentTimeMillis()
+
+        // Start data loading immediately
         viewModel.loadSessionData(sessionId)
+
+        val elapsedTime = System.currentTimeMillis() - startTime
+        if (elapsedTime < minLoadingTime) {
+            delay(minLoadingTime - elapsedTime)
+        }
+        
+        showLoadingScreen = false
     }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color(0xFF1E1E1E)) // Dark Noir Background
+    TexturedBackground(
+        modifier = Modifier.fillMaxSize(),
+        baseColor = NewspaperColors.FreshPaper
     ) {
-        when (val state = uiState) {
-            is ResultUiState.Loading -> {
-                LoadingView()
-            }
-            is ResultUiState.Analyzing -> {
-                AnalyzingView(count = state.logs.size)
-            }
-            is ResultUiState.Error -> {
-                ErrorView(state.message)
-            }
-            is ResultUiState.Success -> {
-                if (state.report != null) {
-                    NewspaperView(state.report, state.logs)
-                } else {
-                    RawTextFallbackView(state.rawText ?: "No evidence found.", state.logs)
+        // Show loading screen until the minimum time has passed OR data is not ready
+        if (showLoadingScreen || uiState is ResultUiState.Loading || uiState is ResultUiState.Analyzing) {
+            val logCount = if (uiState is ResultUiState.Analyzing) (uiState as ResultUiState.Analyzing).logs.size else 0
+            CinematicLoadingView(count = logCount)
+        } else {
+            // Once loading is done, show the result
+            when (val state = uiState) {
+                is ResultUiState.Error -> {
+                    ErrorView(state.message)
                 }
+                is ResultUiState.Success -> {
+                    if (state.report != null) {
+                        CinematicNewspaperView(state.report)
+                    } else {
+                        RawTextFallbackView(state.rawText ?: "No evidence found.", state.logs)
+                    }
+                }
+                // These states are handled by the loading check above
+                is ResultUiState.Loading, is ResultUiState.Analyzing -> { /* Do nothing */ }
             }
         }
     }
 }
 
 @Composable
-fun LoadingView() {
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        CircularProgressIndicator(color = Color(0xFFD4AF37)) // Gold
-        Text(
-            text = "Opening Case File...",
-            color = Color.Gray,
-            modifier = Modifier.padding(top = 64.dp)
-        )
-    }
-}
+fun CinematicLoadingView(count: Int) {
+    val startMessage = if (count > 0) "Reviewing $count pieces of evidence..." else "Scanning archives..."
+    var loadingText by remember { mutableStateOf(startMessage) }
 
-@Composable
-fun AnalyzingView(count: Int) {
-    Column(
+    LaunchedEffect(Unit) {
+        val messages = listOf(
+            startMessage,
+            "Connecting the dots...",
+            "Drafting the headline...",
+            "Setting the type...",
+            "Inking the printing rollers...",
+            "Printing the Extra edition..."
+        )
+        
+        var index = 0
+        while (true) {
+            delay(1500)
+            index = (index + 1) % messages.size
+            loadingText = messages[index]
+        }
+    }
+
+    Box(
         modifier = Modifier.fillMaxSize(),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally
+        contentAlignment = Alignment.Center
     ) {
-        CircularProgressIndicator(color = Color.Red)
-        Spacer(modifier = Modifier.height(16.dp))
-        Text("Connecting clues...", color = Color.White)
-        Text("Analyzing $count pieces of evidence.", color = Color.Gray)
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            CircularProgressIndicator(color = NewspaperColors.HeadlineRed)
+            Spacer(modifier = Modifier.height(24.dp))
+            
+            Text(
+                text = loadingText,
+                style = NewspaperTypography.subheadline,
+                textAlign = TextAlign.Center,
+                color = NewspaperColors.InkBlack,
+                modifier = Modifier.animateContentSize()
+            )
+            
+            Spacer(modifier = Modifier.height(8.dp))
+            
+            Text(
+                text = "Do not close the case file.",
+                style = NewspaperTypography.caption,
+                color = NewspaperColors.InkGray
+            )
+        }
     }
 }
 
 @Composable
 fun ErrorView(message: String) {
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text("Case Closed (Error): $message", color = Color.Red)
+        Text(
+            text = "Case Closed (Error): $message",
+            style = NewspaperTypography.body,
+            color = NewspaperColors.ErrorRed
+        )
     }
 }
 
+/**
+ * The main cinematic newspaper view with entrance animation,
+ * typewriter headline, and staggered content reveal.
+ */
 @Composable
-fun NewspaperView(report: com.hackathon.afterlog.data.model.GeminiReport, logs: List<com.hackathon.afterlog.data.local.entities.MediaLogEntity>) {
-    LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp)
-            .background(Color(0xFFF5E6CA)) // Old Paper Color
+fun CinematicNewspaperView(
+    report: GeminiReport
+) {
+    var hasLanded by remember { mutableStateOf(false) }
+    var headlineComplete by remember { mutableStateOf(false) }
+
+    NewspaperEntranceAnimation(
+        modifier = Modifier.fillMaxSize(),
+        onLanded = { hasLanded = true }
     ) {
-        // Newspaper Header
-        item {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text(
-                    text = "THE AFTERLOG",
-                    fontFamily = FontFamily.Serif,
-                    fontWeight = FontWeight.ExtraBold,
-                    fontSize = 40.sp,
-                    color = Color.Black,
-                    modifier = Modifier.align(Alignment.CenterHorizontally)
-                )
-                HorizontalDivider(color = Color.Black, thickness = 3.dp)
-                Text(
-                    text = "VOL. I  •  DETECTIVE'S FINAL REPORT",
-                    fontFamily = FontFamily.Serif,
-                    fontSize = 12.sp,
-                    color = Color.Black,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 4.dp),
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                )
-                HorizontalDivider(color = Color.Black, thickness = 1.dp)
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(8.dp)
+        ) {
+            // Newspaper Header (Masthead)
+            item {
+                NewspaperHeader()
             }
-        }
 
-        // Headline
-        item {
-            Text(
-                text = report.headline.uppercase(),
-                fontFamily = FontFamily.Serif,
-                fontWeight = FontWeight.Bold,
-                fontSize = 32.sp,
-                lineHeight = 36.sp,
-                color = Color.Black,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-            )
-        }
-
-        // Summary (Lead)
-        item {
-            Text(
-                text = report.summary,
-                fontFamily = FontFamily.Serif,
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 18.sp,
-                fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
-                color = Color(0xFF2C2C2C),
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-            )
-        }
-
-        // Article Body
-        item {
-            Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-                HorizontalDivider(color = Color.Black, thickness = 1.dp, modifier = Modifier.padding(bottom = 12.dp))
-                
-                Text(
-                    text = report.article,
-                    fontFamily = FontFamily.Serif,
-                    fontSize = 16.sp,
-                    lineHeight = 24.sp,
-                    color = Color.Black,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                
-                HorizontalDivider(color = Color.Black, thickness = 1.dp, modifier = Modifier.padding(top = 12.dp))
-            }
-        }
-
-        // Atmosphere & Verdict Columns
-        item {
-            Row(modifier = Modifier.padding(16.dp)) {
-                Column(modifier = Modifier.weight(1f)) {
-                    SectionHeader("ATMOSPHERE")
-                    Text(
-                        text = report.atmosphere,
-                        fontFamily = FontFamily.Serif,
-                        fontSize = 14.sp,
-                        color = Color.Black
+            // Headline with Typewriter Effect
+            item {
+                if (hasLanded) {
+                    TypewriterText(
+                        text = report.headline.uppercase(),
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                        style = NewspaperTypography.headline,
+                        color = NewspaperColors.HeadlineBlack,
+                        charDelayMs = 25L,
+                        onComplete = { headlineComplete = true }
                     )
+                } else {
+                    // Placeholder to maintain layout
+                    Spacer(modifier = Modifier.height(56.dp))
                 }
-                Spacer(modifier = Modifier.width(16.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    SectionHeader("VERDICT")
+            }
+
+            // Summary (Lead) - Fade in after headline
+            item {
+                FadeInContent(
+                    visible = headlineComplete,
+                    delayMs = 100
+                ) {
                     Text(
-                        text = report.verdict,
-                        fontFamily = FontFamily.Serif,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp,
-                        color = Color(0xFF8B0000) // Blood Red Verdict
+                        text = report.summary,
+                        style = NewspaperTypography.subheadline,
+                        color = NewspaperColors.InkGray,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
                     )
                 }
             }
-            HorizontalDivider(color = Color.Black, thickness = 1.dp, modifier = Modifier.padding(horizontal = 16.dp))
-        }
 
-        // Timeline
-        item {
-            Spacer(modifier = Modifier.height(16.dp))
-            SectionHeader("TIMELINE OF EVENTS", modifier = Modifier.padding(horizontal = 16.dp))
-        }
+            // Article Body
+            item {
+                FadeInContent(
+                    visible = headlineComplete,
+                    delayMs = 300
+                ) {
+                    Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                        HorizontalDivider(
+                            color = NewspaperColors.RuleLine,
+                            thickness = 1.dp,
+                            modifier = Modifier.padding(bottom = 12.dp)
+                        )
 
-        items(report.timeline) { event ->
-            TimelineEventCard(event)
-        }
-        
-        item {
-             Spacer(modifier = Modifier.height(32.dp))
+                        Text(
+                            text = report.article,
+                            style = NewspaperTypography.body,
+                            color = NewspaperColors.InkBlack,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        HorizontalDivider(
+                            color = NewspaperColors.RuleLine,
+                            thickness = 1.dp,
+                            modifier = Modifier.padding(top = 12.dp)
+                        )
+                    }
+                }
+            }
+
+            // Atmosphere & Verdict Columns
+            item {
+                FadeInContent(
+                    visible = headlineComplete,
+                    delayMs = 500
+                ) {
+                    Row(modifier = Modifier.padding(16.dp)) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            SectionHeader("ATMOSPHERE")
+                            Text(
+                                text = report.atmosphere,
+                                style = NewspaperTypography.body,
+                                color = NewspaperColors.InkBlack
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(16.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            SectionHeader("VERDICT")
+                            Text(
+                                text = report.verdict,
+                                style = NewspaperTypography.body.copy(
+                                    fontFamily = LoraFamily,
+                                    fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                                ),
+                                color = NewspaperColors.HeadlineRed
+                            )
+                        }
+                    }
+                    HorizontalDivider(
+                        color = NewspaperColors.RuleLine,
+                        thickness = 1.dp,
+                        modifier = Modifier.padding(horizontal = 16.dp)
+                    )
+                }
+            }
+
+            // Timeline Header
+            item {
+                FadeInContent(
+                    visible = headlineComplete,
+                    delayMs = 700
+                ) {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    SectionHeader(
+                        text = "TIMELINE OF EVENTS",
+                        modifier = Modifier.padding(horizontal = 16.dp)
+                    )
+                }
+            }
+
+            // Timeline Events
+            items(report.timeline) { event ->
+                FadeInContent(
+                    visible = headlineComplete,
+                    delayMs = 800
+                ) {
+                    TimelineEventCard(event)
+                }
+            }
+
+            // Bottom spacing
+            item {
+                Spacer(modifier = Modifier.height(32.dp))
+            }
         }
     }
 }
@@ -215,68 +297,62 @@ fun NewspaperView(report: com.hackathon.afterlog.data.model.GeminiReport, logs: 
 fun SectionHeader(text: String, modifier: Modifier = Modifier) {
     Text(
         text = text,
-        fontFamily = FontFamily.SansSerif,
-        fontWeight = FontWeight.Black,
-        fontSize = 12.sp,
-        letterSpacing = 1.sp,
-        color = Color.DarkGray,
+        style = NewspaperTypography.sectionHeader,
+        color = NewspaperColors.InkGray,
         modifier = modifier.padding(bottom = 4.dp)
     )
 }
 
 @Composable
-fun TimelineEventCard(event: com.hackathon.afterlog.data.model.TimelineEvent) {
+fun TimelineEventCard(event: TimelineEvent) {
     Card(
-        colors = CardDefaults.cardColors(containerColor = Color.Transparent),
+        colors = CardDefaults.cardColors(containerColor = NewspaperColors.AgedPaper.copy(alpha = 0.3f)),
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 4.dp)
     ) {
-        Column {
+        Column(modifier = Modifier.padding(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = event.timestamp,
-                    fontWeight = FontWeight.Bold,
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = 14.sp,
-                    color = Color.DarkGray
+                    style = NewspaperTypography.timestamp,
+                    color = NewspaperColors.InkGray
                 )
-                Spacer(modifier = Modifier.width(8.dp))
+                Spacer(modifier = Modifier.width(12.dp))
                 Text(
                     text = event.speaker,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 14.sp,
-                    color = Color(0xFF553311) // Leather Brown
+                    style = NewspaperTypography.timestamp.copy(
+                        fontFamily = SpecialEliteFamily
+                    ),
+                    color = NewspaperColors.SpeakerA
                 )
             }
+            Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = event.event,
-                fontFamily = FontFamily.Serif,
-                fontWeight = FontWeight.Bold,
-                fontSize = 16.sp,
-                color = Color.Black
+                style = NewspaperTypography.body.copy(
+                    fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                ),
+                color = NewspaperColors.InkBlack
             )
             Text(
                 text = event.description,
-                fontFamily = FontFamily.Serif,
-                fontSize = 14.sp,
-                color = Color.DarkGray
+                style = NewspaperTypography.body,
+                color = NewspaperColors.InkGray
             )
             if (event.decibel != null) {
-                 Text(
+                Text(
                     text = "Analyzed Volume: ${event.decibel} dB",
-                    fontSize = 10.sp,
-                    color = Color.Gray
+                    style = NewspaperTypography.caption,
+                    color = NewspaperColors.LightRule
                 )
             }
-            HorizontalDivider(color = Color.LightGray, modifier = Modifier.padding(top = 8.dp))
         }
     }
 }
 
-
 @Composable
-fun RawTextFallbackView(rawText: String, logs: List<com.hackathon.afterlog.data.local.entities.MediaLogEntity>) {
+fun RawTextFallbackView(rawText: String, logs: List<MediaLogEntity>) {
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -285,18 +361,57 @@ fun RawTextFallbackView(rawText: String, logs: List<com.hackathon.afterlog.data.
         item {
             Text(
                 text = "Unformatted Report",
-                color = Color.Red,
-                fontWeight = FontWeight.Bold
+                style = NewspaperTypography.sectionHeader,
+                color = NewspaperColors.ErrorRed
             )
             Spacer(modifier = Modifier.height(8.dp))
             Text(
                 text = rawText,
-                color = Color.White,
-                fontFamily = FontFamily.Monospace
+                style = NewspaperTypography.timestamp,
+                color = NewspaperColors.InkBlack
             )
         }
         items(logs) { log ->
-            Text(log.toString(), color = Color.Gray)
+            Text(
+                text = log.toString(),
+                style = NewspaperTypography.caption,
+                color = NewspaperColors.InkGray
+            )
         }
+    }
+}
+
+// Preview with mock data
+@Preview(showBackground = true, widthDp = 400, heightDp = 800)
+@Composable
+fun PreviewCinematicNewspaperView() {
+    val mockReport = GeminiReport(
+        headline = "Terror in the Archives: A Night of Unspeakable Horror",
+        summary = "Our brave investigators ventured into the haunted library, only to discover horrors beyond imagination lurking in the shadows.",
+        article = "The evening began innocuously enough, with our party of four entering the estate\'s grand library. Little did they know that ancient evil awaited...",
+        atmosphere = "Tense, claustrophobic, with moments of sheer panic.",
+        verdict = "INVESTIGATION FAILED - Madness consumed all.",
+        timeline = listOf(
+            TimelineEvent(
+                timestamp = "00:15:32",
+                speaker = "Speaker A",
+                event = "First Encounter",
+                description = "A strange noise echoed from the basement.",
+                decibel = 85
+            ),
+            TimelineEvent(
+                timestamp = "00:42:17",
+                speaker = "Speaker B",
+                event = "The Revelation",
+                description = "Ancient texts revealed the entity\'s true name.",
+                decibel = null
+            )
+        )
+    )
+    
+    TexturedBackground(modifier = Modifier.fillMaxSize()) {
+        CinematicNewspaperView(
+            report = mockReport
+        )
     }
 }
