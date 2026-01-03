@@ -10,6 +10,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
 import com.example.afterlog.data.local.entities.MediaType
 import com.example.afterlog.data.repository.LocalRepository
+import com.example.afterlog.data.local.FileManager
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.*
 import kotlinx.coroutines.sync.Mutex

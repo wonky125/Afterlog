@@ -1,4 +1,4 @@
-package com.example.afterlog.ui.result
+package com.example.afterlog.feature.result
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope

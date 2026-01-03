@@ -10,9 +10,9 @@ import androidx.compose.ui.Modifier
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import com.example.afterlog.ui.home.HomeScreen
+import com.example.afterlog.feature.home.HomeScreen
 import com.example.afterlog.ui.navigation.Screen
-import com.example.afterlog.ui.report.ReportDetailScreen
+import com.example.afterlog.feature.report.ReportDetailScreen
 import com.example.afterlog.ui.theme.AfterLogTheme
 import dagger.hilt.android.AndroidEntryPoint
 

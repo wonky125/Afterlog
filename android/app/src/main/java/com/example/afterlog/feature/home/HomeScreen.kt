@@ -1,4 +1,4 @@
-package com.example.afterlog.ui.home
+package com.example.afterlog.feature.home
 
 import android.Manifest
 import android.content.Context
