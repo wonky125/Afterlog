@@ -12,8 +12,6 @@ class FileManager @Inject constructor(
 ) {
     // Persistent storage for session media (Audio, Highlights, Photos)
     // Files/session_media/
-    // Persistent storage for session media (Audio, Highlights, Photos)
-    // Files/session_media/
     val sessionMediaDir: File by lazy {
         File(context.filesDir, "session_media").apply { mkdirs() }
     }

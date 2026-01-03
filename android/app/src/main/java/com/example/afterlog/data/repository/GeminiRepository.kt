@@ -16,9 +16,27 @@ import javax.inject.Singleton
 class GeminiRepository @Inject constructor() {
 
     private val generativeModel = GenerativeModel(
-        modelName = "gemini-1.5-flash", // Updated model for multimodal tasks
-        apiKey = BuildConfig.GEMINI_API_KEY
+        // Development: gemini-2.5-flash (Working & High Quota)
+        // Production: gemini-3-pro-preview (Gemini 3 Pro requirement)
+        modelName = "gemini-2.5-flash", 
+        apiKey = BuildConfig.GEMINI_API_KEY,
+        generationConfig = com.google.ai.client.generativeai.type.generationConfig {
+            temperature = 0.7f
+            topK = 40
+            topP = 0.95f
+            maxOutputTokens = 8192
+        }
     )
+
+    suspend fun testConnection(): String = withContext(Dispatchers.IO) {
+        try {
+            val response = generativeModel.generateContent("Hello, are you there? Reply with: 'Connection Success!'")
+            return@withContext response.text ?: "Connection Error: Empty response"
+        } catch (e: Exception) {
+            Log.e("GeminiRepo", "Connection test failed", e)
+            return@withContext "Connection Failed: ${e.localizedMessage}"
+        }
+    }
 
     suspend fun generateInvestigativeReport(videoFiles: List<File>, contextData: String): String = withContext(Dispatchers.IO) {
         try {

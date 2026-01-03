@@ -20,11 +20,13 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.example.afterlog.service.AfterLogService
+import androidx.hilt.navigation.compose.hiltViewModel
 import java.util.UUID
 
 @Composable
 fun HomeScreen(
-    onNavigateToReport: () -> Unit
+    onNavigateToReport: () -> Unit,
+    viewModel: HomeViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
     var isServiceRunning by remember { mutableStateOf(false) } // Simple state for demo
@@ -220,6 +222,35 @@ fun HomeScreen(
             onClick = onNavigateToReport
         ) {
             Text("View Reports (Test)")
+        }
+
+        Spacer(modifier = Modifier.height(32.dp))
+
+        // Gemini Connection Test Section
+        val testResult by viewModel.testResult.collectAsState()
+        val isTesting by viewModel.isTesting.collectAsState()
+
+        Button(
+            onClick = { viewModel.testGeminiConnection() },
+            enabled = !isTesting,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.tertiary
+            )
+        ) {
+            Text(if (isTesting) "Testing Gemini..." else "Test Gemini Connection")
+        }
+
+        testResult?.let { result ->
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = result,
+                style = MaterialTheme.typography.bodySmall,
+                color = if (result.contains("Success")) 
+                    MaterialTheme.colorScheme.primary 
+                else 
+                    MaterialTheme.colorScheme.error,
+                modifier = Modifier.padding(horizontal = 16.dp)
+            )
         }
     }
 }

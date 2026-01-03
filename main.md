@@ -32,9 +32,9 @@
 | 구분 | 기술 선정 | 역할 및 이유 |
 | :--- | :--- | :--- |
 | **Language & UI** | `Kotlin`, `Compose` | 안드로이드 네이티브 최적화 및 **Material 3** 적용으로 고품질 UX 제공. |
-| **AI Model** | `Gemini 3 Pro` | **멀티모달 이미지 시퀀스 및 오디오 분석** (Long Context 활용). |
+| **AI Model** | `Gemini 2.5 Flash` & `3.0 Pro` | **듀얼 전략**: 개발 시 2.5 Flash 사용 (할당량 확보), 최종 제출 시 3.0 Pro(`gemini-3-pro-preview`)로 전환. |
 | **Vision** | `CameraX` | **백그라운드 무음 촬영 및 타임랩스** 구현, 기기 호환성 보장. |
-| **Audio** | `Gemini 3.0 Pro Native` | 별도의 라이브러리 없이 **오디오 파일을 통째로 Gemini에 업로드**하여 화자 분리 및 맥락 분석 수행. |
+| **Audio** | `Gemini 2.5 Flash` & `3.0 Pro` | 별도의 라이브러리 없이 **오디오 파일을 통째로 Gemini에 업로드**하여 화자 분리 및 맥락 분석 수행. |
 | **Voice (TTS)** | `Google Cloud TTS` | 생성된 서사를 음성으로 읽어주는 **접근성 기능** 및 고품질 나레이션. |
 | **Backend** | `Firebase` | **멀티 디바이스(Host-Guest) 데이터 동기화** 및 이미지 저장. |
 | **Local DB** | `Room` | Offline-first 전략을 위한 로컬 데이터 저장 및 동기화 관리. |

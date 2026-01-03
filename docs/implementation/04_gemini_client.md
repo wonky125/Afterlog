@@ -1,12 +1,12 @@
 # 04. Gemini AI 클라이언트 (Gemini Client Module)
 
 ## 1. 목적 및 범위
-- **목적**: 수집된 원본 데이터(Multi-modal)를 Gemini 3 Pro에 전송하여 구조화된 사건 로그와 서사를 생성.
+- **목적**: 수집된 원본 데이터(Multi-modal)를 Gemini 3 Pro Preview에 전송하여 구조화된 사건 로그와 서사를 생성.
 - **범위**: Google AI Client SDK 연동, 안전 설정(Safety Settings), 프롬프트 엔지니어링, JSON 파싱.
 
 ## 2. 데이터 구조
 ### Request (Prompt Construction)
-- **Model**: `gemini-1.5-pro` (Long Context Window 필요).
+- **Model**: `gemini-2.5-flash` (개발용, 높은 할당량) / `gemini-3-pro-preview` (최종 제출용, Long Context).
 - **Parts**:
   - `Text`: System Prompt (Persona: 1920s Investigative Journalist in Arkham).
   - `List<Bitmap>`: Resized image list (max ~50 images).
