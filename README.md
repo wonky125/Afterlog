@@ -32,7 +32,7 @@
 | Category | Technology | Usage |
 | :--- | :--- | :--- |
 | **Mobile** | **Android (Kotlin)** | Jetpack Compose, Material 3, Hilt |
-| **AI Model** | **Gemini 1.5 Pro** | Multimodal analysis (Image + Audio -> JSON) |
+| **AI Model** | **Development**: `gemini-2.5-flash` <br> **Production**: `gemini-3-pro-preview` | Multimodal analysis (Long Context Window) |
 | **Vision** | **CameraX** | Background time-lapse & video recording |
 | **Audio** | **AudioRecord** | Real-time decibel metering & PCM buffer management |
 | **Database** | **Room** | Offline-first local data persistence |
