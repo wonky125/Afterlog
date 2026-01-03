@@ -59,3 +59,7 @@ google-services.json
 # Windows
 Thumbs.db
 *.hprof
+
+test_*.mp4
+test_*.mp3
+

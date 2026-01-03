@@ -45,8 +45,8 @@
     4. 응답 JSON 파싱 및 DB 저장.
 
 ## 5. 구현 우선순위 및 체크리스트
-1. [ ] **API Key 발급**: Google AI Studio에서 키 발급 및 프로젝트 적용.
-2. [ ] **Simple Test**: 텍스트 프롬프트로 "Hello" 응답 확인.
-3. [ ] **Multimodal Test**: 로컬 이미지 1장 + "이게 뭐니" 질문 테스트.
-4. [ ] **Prompt Tuning**: Apply "Investigative Journalist" persona (English).
-5. [ ] **Serialization**: JSON 응답 파싱 로직 및 예외 처리 (JSON 형식이 깨져서 올 경우 대비).
+1. [X] **API Key 발급**: Google AI Studio에서 키 발급 및 프로젝트 적용.
+2. [X] **Simple Test**: 텍스트 프롬프트로 "Hello" 응답 확인.
+3. [X] **Multimodal Test**: 로컬 이미지 1장 + "이게 뭐니" 질문 테스트.
+4. [X] **Prompt Tuning**: Apply "Investigative Journalist" persona (English).
+5. [X] **Serialization**: JSON 응답 파싱 로직 및 예외 처리 (JSON 형식이 깨져서 올 경우 대비).

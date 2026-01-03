@@ -1,8 +1,12 @@
 package com.hackathon.afterlog.feature.result
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hackathon.afterlog.data.local.entities.MediaLogEntity
+import com.hackathon.afterlog.data.local.entities.MediaType
+import com.hackathon.afterlog.data.model.GeminiReport
+import com.hackathon.afterlog.data.model.TimelineEvent
 import com.hackathon.afterlog.data.repository.GeminiRepository
 import com.hackathon.afterlog.data.repository.LocalRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -10,6 +14,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.serialization.SerializationException
+import kotlinx.serialization.json.Json
 import java.io.File
 import javax.inject.Inject
 
@@ -22,10 +28,15 @@ class GameResultViewModel @Inject constructor(
     private val _uiState = MutableStateFlow<ResultUiState>(ResultUiState.Loading)
     val uiState: StateFlow<ResultUiState> = _uiState.asStateFlow()
 
+    private val json = Json {
+        ignoreUnknownKeys = true
+        isLenient = true
+    }
+
     fun loadSessionData(sessionId: String) {
         viewModelScope.launch {
             _uiState.value = ResultUiState.Loading
-            
+
             // 1. Fetch Logs from DB
             // Assuming we have a getSessionLogs function in LocalRepository
             // Use dummy data or implement retrieval if needed
@@ -33,8 +44,49 @@ class GameResultViewModel @Inject constructor(
              // val logs = emptyList<MediaLog>() // Placeholder
 
             if (logs.isEmpty()) {
-                _uiState.value = ResultUiState.Error("No logs found for session $sessionId")
-                return@launch
+                if (sessionId == "last_session") {
+                    // DEBUG: Inject Mock Data for UI Verification
+                    Log.d("GameResultVM", "No real logs found, using MOCK DATA for verification.")
+                    val mockReport = GeminiReport(
+                        headline = "THE MIDNIGHT WHISPER",
+                        summary = "A phantom voice was recorded in the living room exactly at 03:00 AM, coincident with a sudden temperature drop.",
+                        atmosphere = "Chilling, suspenseful, and undeniably supernatural.",
+                        article = "The clock struck three when the first whisper echoed through the empty halls of the old manor. Our investigators—seasoned veterans of the unexplained—froze in place as the temperature plummeted. What happened next would shake even the most hardened skeptic.\n\nMs. Adams was the first to hear it: a faint plea for help, disembodied and desperate. The recording equipment captured every chilling syllable. By dawn, the team had collected evidence that defied all rational explanation.\n\nThis reporter has covered many cases in The Dark City, but none quite like this. The voice on that recording speaks to something beyond our understanding—a cry from the other side that demands to be heard.",
+                        timeline = listOf(
+                            TimelineEvent("02:59:55", "Environment", "Silence", "Ambient noise level drops significantly.", 30),
+                            TimelineEvent("03:00:00", "Unknown Entity", "Whisper", "A faint voice says 'Help me'.", 45),
+                            TimelineEvent("03:00:05", "User", "Gasp", "User reacts to the sound.", 60)
+                        ),
+                        verdict = "High Probability of Class A Apparition."
+                    )
+
+                    val mockLogs = listOf(
+                         MediaLogEntity(
+                             sessionId = "mock",
+                             type = MediaType.AUDIO_SICK,
+                             filePath = "mock_audio.mp3",
+                             timestamp = System.currentTimeMillis(),
+                             decibel = 45
+                         ),
+                         MediaLogEntity(
+                             sessionId = "mock",
+                             type = MediaType.VIDEO_HIGHLIGHT,
+                             filePath = "mock_video.mp4",
+                             timestamp = System.currentTimeMillis() + 5000,
+                             decibel = 60
+                         )
+                    )
+
+                    _uiState.value = ResultUiState.Success(
+                        report = mockReport,
+                        rawText = null,
+                        logs = mockLogs
+                    )
+                    return@launch
+                } else {
+                    _uiState.value = ResultUiState.Error("No logs found for session $sessionId")
+                    return@launch
+                }
             }
 
             // 2. Identify "Highlight" videos
@@ -46,37 +98,54 @@ class GameResultViewModel @Inject constructor(
 
             if (videoFiles.isEmpty()) {
                  _uiState.value = ResultUiState.Success(
-                     report = "No video evidence collected.",
+                     report = null,
+                     rawText = "No video evidence collected.",
                      logs = logs
                  )
                  return@launch
             }
 
-            // 3. Trigger Gemini Analysis (MOCK MODE)
-            // User requested to NOT connect Gemini yet.
+            // Find Audio File
+            val audioFile = logs
+                .firstOrNull { it.filePath.endsWith(".pcm") } // Currently PCM based on AudioMonitor
+                ?.let { File(it.filePath) }
+
+            // 3. Trigger Gemini Analysis (REAL CONNECTION)
             _uiState.value = ResultUiState.Analyzing(logs)
-            
-            // SIMULATED DELAY & RESPONSE
-            kotlinx.coroutines.delay(2000) 
-            
-            val mockReport = """
-                Headline: THE MOCK REPORT
-                Time: ${java.text.SimpleDateFormat("yyyy-MM-dd HH:mm").format(java.util.Date())}
-                
-                Observation: 
-                [MOCK] This is a dummy analysis. 
-                The system detected ${logs.size} evidence logs.
-                Real Gemini AI connection is currently DISABLED as per request.
-                
-                Conclusion:
-                The recording stability has been verified. 
-                Proceed to enable AI when ready.
-            """.trimIndent()
-            
-            // Real call disabled:
-            // val report = geminiRepository.generateInvestigativeReport(...)
-            
-            _uiState.value = ResultUiState.Success(mockReport, logs)
+
+            val contextData = "Session: $sessionId. Clues found: ${logs.size}. " +
+                "Highest noise detected: ${logs.maxByOrNull { it.decibel ?: 0 }?.decibel} dB."
+
+            // Pass audioFile (even if PCM, it will just be a placeholder or processed in Repo phase 2)
+            val rawResponse = geminiRepository.generateInvestigativeReport(videoFiles, audioFile, contextData)
+
+            // 4. Safe JSON Parsing
+            val parsedReport = parseGeminiResponse(rawResponse)
+
+            _uiState.value = ResultUiState.Success(
+                report = parsedReport,
+                rawText = if (parsedReport == null) rawResponse else null,
+                logs = logs
+            )
+        }
+    }
+
+    private fun parseGeminiResponse(rawText: String): GeminiReport? {
+        return try {
+            // Remove markdown code blocks if present
+            val cleanedJson = rawText
+                .replace("```json", "")
+                .replace("```", "")
+                .trim()
+
+            json.decodeFromString<GeminiReport>(cleanedJson)
+
+        } catch (e: SerializationException) {
+            Log.e("GameResultVM", "JSON parsing failed, fallback to raw", e)
+            null
+        } catch (e: Exception) {
+            Log.e("GameResultVM", "Unexpected parsing error", e)
+            null
         }
     }
 }
@@ -84,6 +153,10 @@ class GameResultViewModel @Inject constructor(
 sealed class ResultUiState {
     object Loading : ResultUiState()
     data class Analyzing(val logs: List<MediaLogEntity>) : ResultUiState()
-    data class Success(val report: String, val logs: List<MediaLogEntity>) : ResultUiState()
+    data class Success(
+        val report: GeminiReport?,
+        val rawText: String?,
+        val logs: List<MediaLogEntity>
+    ) : ResultUiState()
     data class Error(val message: String) : ResultUiState()
 }
