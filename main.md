@@ -194,10 +194,10 @@ fun ReplayDetailScreen(videoUri: String, logs: List<InvestigationLog>) {
 
 | 단계 | 기간 | 핵심 과제 및 심사 기준 연계 | 버퍼/주의사항 |
 | :--- | :--- | :--- | :--- |
-| **1주** | 기반 구축 | 안드로이드 프로젝트 세팅, CameraX 및 Gemini API 기본 호출 성공 | - |
-| **2주** | 감각 기관 | AudioRecord 비명 감지 및 **Rolling Buffer (5분 영상)** 구현 | ⚠️ 안드로이드 12+ 마이크 권한 제약 확인 필요 |
-| **3주** | 백그라운드 | Foreground Service 및 Overlay 플로팅 버튼 구현 | 2주차에서 분리하여 안정성 확보 |
-| **4주** | 연결 | Firebase Host-Guest 동기화 + NTP 타임스탬프 보정 | - |
+| **1주** | 기반 구축 | 안드로이드 프로젝트 세팅, CameraX 및 Gemini API 기본 호출 성공 (✅ 완료) | - |
+| **2주** | 감각 기관 | AudioRecord 비명 감지 및 **Rolling Buffer (5분 영상)** 구현 (✅ 완료) | ⚠️ 안드로이드 12+ 마이크 권한 제약 확인 필요 |
+| **3주** | 백그라운드 | Foreground Service 및 Overlay 플로팅 버튼 구현 (✅ 완료) | 2주차에서 분리하여 안정성 확보 |
+| **4주** | 연결 | Firebase Host-Guest 동기화 + NTP 타임스탬프 보정 (✅ NTP 완료) | - |
 | **5주** | 지능 부여 | Gemini 프롬프트 튜닝 + TTS + 영상 합성 (MediaMuxer) | 데모 영상 촬영 병행 시작 |
 | **6주** | 완성 & 제출 | 매거진 UI 폴리싱, 3시간 플레이 테스트, 최종 영상 편집 | 버그 수정 버퍼 확보 |
 
@@ -269,11 +269,11 @@ Devpost 공식 규정(IP Compliance)을 준수하기 위해 다음 전략을 엄
 ### ✅ MVP (필수 기능) - 해커톤 제출 최소 요건
 | 기능 | 설명 |
 | :--- | :--- |
-| **단일 기기 촬영 + 녹음** | Host 1대에서 타임랩스 + **오디오 파일 업로드(Files API)**로 전체 대화 수집 |
+| **단일 기기 촬영 + 녹음** | Host 1대에서 타임랩스 + **오디오 파일 업로드(Files API)**로 전체 대화 수집 (✅ 수집 완료) |
 | **화자 분리(Speaker Diarization)** | **Gemini 3.0 Pro Native** 기능으로 별도 구현 없이 해결 |
 | **Gemini 서사 & 로그 생성**| 전체 오디오와 사진 샘플을 기반으로 맥락을 파악하여 **정확도 높은 사건 일지** 생성 |
 | **Newspaper View** | 상세 로그와 서사를 신문 기사 형식으로 보여주는 UI |
-| **MP4 영상 합성 (Hybrid)** | **실제 비디오 클립(Rolling Buffer)**과 타임랩스 사진을 우선순위에 따라 병합하여 하이라이트 영상 생성 |
+| **MP4 영상 합성 (Hybrid)** | **실제 비디오 클립(Rolling Buffer)**과 타임랩스 사진을 우선순위에 따라 병합하여 하이라이트 영상 생성 (✅ Rolling Buffer 완료) |
 | **TTS 낭독** | 생성된 텍스트를 Google Cloud TTS로 음성 변환 |
 | **기본 뷰어 UI** | 생성된 리플레이를 볼 수 있는 간단한 화면 |
 

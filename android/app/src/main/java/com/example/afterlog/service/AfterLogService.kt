@@ -17,7 +17,9 @@ import com.example.afterlog.MainActivity
 import com.example.afterlog.R
 import com.example.afterlog.data.repository.LocalRepository
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 @AndroidEntryPoint
@@ -46,6 +48,9 @@ class AfterLogService : LifecycleService() {
     @Inject
     lateinit var timeManager: TimeManager
 
+    @Inject
+    lateinit var cameraUseCaseManager: CameraUseCaseManager
+
     private var wakeLock: PowerManager.WakeLock? = null
     private var currentSessionId: String? = null
 
@@ -58,67 +63,146 @@ class AfterLogService : LifecycleService() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         super.onStartCommand(intent, flags, startId)
 
-        val sessionId = intent?.getStringExtra(EXTRA_SESSION_ID)
+        if (intent == null) {
+            Log.e(TAG, "Service started with null intent, stopping")
+            stopSelf()
+            return START_NOT_STICKY
+        }
 
-        if (sessionId == null) {
-            // Check for simulation action
-            if (intent?.action == ACTION_SIMULATE_SCREAM) {
-                Log.d(TAG, "Simulating Scream Event!")
-                videoManager.saveBufferForEvent(currentSessionId ?: "unknown_session")
-                return START_STICKY
-            }
+        // *CRITICAL FIX*: Start Foreground IMMEDIATELY to prevent crash (Android 12+)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundServiceWithNotification("Initializing AfterLog...")
+        }
 
-            Log.e(TAG, "No session ID provided, starting new session")
-            lifecycleScope.launch {
-                currentSessionId = repository.startNewSession()
-                startRecording(currentSessionId!!)
-            }
+        // 1. Handle Simulation Actions independently
+        if (intent.action == ACTION_SIMULATE_SCREAM) {
+            handleSimulateAction()
+            return START_STICKY
+        }
+
+        // 2. Handle Session Initialization
+        val sessionId = intent.getStringExtra(EXTRA_SESSION_ID)
+        if (sessionId.isNullOrEmpty()) {
+            handleNewSession()
         } else {
-            currentSessionId = sessionId
-            startRecording(sessionId)
+            handleResumeSession(sessionId)
         }
 
         return START_STICKY
     }
 
-    private fun startRecording(sessionId: String) {
-        // Start as foreground service
-        val notification = createNotification()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(
-                NOTIFICATION_ID,
-                notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
-            )
-        } else {
-            startForeground(NOTIFICATION_ID, notification)
+    private fun handleSimulateAction() {
+        val targetSession = currentSessionId
+        if (targetSession == null) {
+            Log.e(TAG, "Cannot simulate scream: No active session")
+            showToast("Error: No active session. Please start recording first.")
+            return
         }
+        
+        Log.d(TAG, "Simulating Scream Event for session: $targetSession")
+        videoManager.saveBufferForEvent(targetSession)
+        showToast("Simulation: Scream Event Triggered!")
+        updateNotification("Recording active (Event triggered!)")
+    }
 
-        // Acquire WakeLock
+    private fun handleNewSession() {
+        Log.i(TAG, "Starting new session...")
+        lifecycleScope.launch {
+            val newSessionId = repository.startNewSession()
+            handleResumeSession(newSessionId)
+        }
+    }
+
+    private fun handleResumeSession(sessionId: String) {
+        currentSessionId = sessionId
+        startRecording(sessionId)
+    }
+
+    private fun startRecording(sessionId: String) {
+        // Update Notification to "Recording" state using UPDATE method, not startForeground
+        updateNotification("Listening for screams...")
+
+        // Acquire WakeLock (Safety: 1 hour timeout to prevent infinite battery drain)
         acquireWakeLock()
 
-        // NOTE: CameraManager (ImageCapture) disabled - conflicts with VideoManager binding
-        // TODO: Post-hackathon: Merge into unified CameraUseCaseManager
-        Log.d(TAG, "ImageCapture disabled (Video-only mode)")
+        // Bind unified camera use cases
+        Log.d(TAG, "Binding Camera Use Cases...")
+        lifecycleScope.launch(Dispatchers.Main) {
+             cameraUseCaseManager.bindToLifecycle(this@AfterLogService)
+        }
 
         // Start Audio Monitoring
-        try {
-            audioMonitor.startMonitoring(sessionId, lifecycleScope)
-            Log.d(TAG, "Audio monitoring started")
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to start audio monitoring", e)
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                kotlinx.coroutines.delay(500) // Small delay to let system settle
+                audioMonitor.startMonitoring(sessionId, this)
+                withContext(Dispatchers.Main) {
+                    Log.d(TAG, "Audio monitoring started")
+                }
+            } catch (t: Throwable) {
+                Log.e(TAG, "Audio Init Failed", t)
+                withContext(Dispatchers.Main) {
+                     showToast("Audio Error: ${t.message}")
+                }
+            }
         }
 
         // Start Video Recording (Rolling Buffer)
         try {
-            videoManager.bindCamera(this)
-            videoManager.startRecordingLoop(sessionId, lifecycleScope)
+            // No need to bind explicitly here, CameraUseCaseManager handles it.
+            lifecycleScope.launch(kotlinx.coroutines.CoroutineExceptionHandler { _, e ->
+                 Log.e(TAG, "Video Coroutine Crash", e)
+                 showToast("Video Crash: ${e.message}")
+            }) {
+                videoManager.startRecordingLoop(sessionId, this)
+            }
             Log.d(TAG, "Video recording loop started")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to start video recording", e)
+            showToast("Video Error: ${e.message}")
         }
 
+        // Start Photo Timelapse (if needed, CameraManager logic)
+        cameraManager.startCapturing(sessionId, lifecycleScope)
+
         Log.i(TAG, "Recording started for session: $sessionId")
+    }
+
+    private fun startForegroundServiceWithNotification(contentText: String) {
+        val notification = createNotification(contentText)
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                // API 30+: Require explicit types
+                startForeground(
+                    NOTIFICATION_ID,
+                    notification,
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+                )
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                // API 29: startForeground takes 3 args, but specific types might be optional
+                startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MANIFEST)
+            } else {
+                startForeground(NOTIFICATION_ID, notification)
+            }
+        } catch (e: Exception) {
+             Log.e(TAG, "Failed to start foreground service", e)
+             showToast("Error starting service: ${e.message}")
+             stopSelf()
+        }
+    }
+
+    // Helper to update notification without restarting foreground service
+    private fun updateNotification(contentText: String) {
+        val notification = createNotification(contentText)
+        val notificationManager = getSystemService(NotificationManager::class.java)
+        notificationManager.notify(NOTIFICATION_ID, notification)
+    }
+
+    private fun showToast(message: String) {
+        // Must run on Main Thread
+        android.os.Handler(android.os.Looper.getMainLooper()).post {
+            android.widget.Toast.makeText(applicationContext, message, android.widget.Toast.LENGTH_LONG).show()
+        }
     }
 
     override fun onDestroy() {
@@ -127,6 +211,12 @@ class AfterLogService : LifecycleService() {
         // Stop all recording components
         audioMonitor.stopMonitoring()
         videoManager.stopRecording()
+        cameraManager.stopCapturing()
+        
+        cameraManager.stopCapturing()
+        cameraManager.shutdown()
+        
+        cameraUseCaseManager.shutdown()
         
         // End session in database
         currentSessionId?.let { sessionId ->
@@ -136,8 +226,11 @@ class AfterLogService : LifecycleService() {
             }
         }
 
-        // Release WakeLock
+        // Release WakeLock (Critical cleanup)
         releaseWakeLock()
+        
+        // Stop foreground service properly
+        stopForeground(STOP_FOREGROUND_REMOVE)
 
         super.onDestroy()
     }
@@ -156,7 +249,7 @@ class AfterLogService : LifecycleService() {
         }
     }
 
-    private fun createNotification(): Notification {
+    private fun createNotification(contentText: String): Notification {
         val pendingIntent: PendingIntent = PendingIntent.getActivity(
             this,
             0,
@@ -166,8 +259,8 @@ class AfterLogService : LifecycleService() {
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("AfterLog Recording")
-            .setContentText("Recording your session...")
-            .setSmallIcon(R.drawable.ic_launcher_foreground) // Replace with proper icon
+            .setContentText(contentText)
+            .setSmallIcon(R.drawable.ic_notification_record)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
             .build()
@@ -180,7 +273,7 @@ class AfterLogService : LifecycleService() {
                 PowerManager.PARTIAL_WAKE_LOCK,
                 "AfterLog::RecordingWakeLock"
             ).apply {
-                acquire(60 * 60 * 1000L) // 1 hour max (failsafe)
+                acquire(2 * 60 * 60 * 1000L) // 2 hours (Safety reduced from 4h)
             }
             Log.d(TAG, "WakeLock acquired")
         } catch (e: Exception) {
@@ -190,15 +283,19 @@ class AfterLogService : LifecycleService() {
 
     private fun releaseWakeLock() {
         try {
-            wakeLock?.let {
-                if (it.isHeld) {
-                    it.release()
+            wakeLock?.let { lock ->
+                if (lock.isHeld) {
+                    lock.release()
                     Log.d(TAG, "WakeLock released")
+                } else {
+                     Log.w(TAG, "WakeLock already released")
                 }
             }
+        } catch (e: RuntimeException) {
+            // release() double call safe guard across threads
+            Log.e(TAG, "WakeLock release failed (already released?)", e)
+        } finally {
             wakeLock = null
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to release WakeLock", e)
         }
     }
 }

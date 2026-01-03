@@ -58,4 +58,8 @@ class LocalRepository @Inject constructor(
     fun getLogsForSession(sessionId: String): Flow<List<MediaLogEntity>> {
         return logDao.getLogsBySession(sessionId)
     }
+
+    suspend fun getSessionLogs(sessionId: String): List<MediaLogEntity> {
+        return logDao.getLogsBySessionSuspend(sessionId)
+    }
 }

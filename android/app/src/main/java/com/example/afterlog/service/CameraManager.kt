@@ -21,43 +21,24 @@ import javax.inject.Singleton
 
 @Singleton
 class CameraManager @Inject constructor(
-    @ApplicationContext private val context: Context,
     private val repository: LocalRepository,
-    private val timeManager: TimeManager
+    private val timeManager: TimeManager,
+    private val cameraUseCaseManager: CameraUseCaseManager,
+    private val fileManager: FileManager
 ) {
-    private var imageCapture: ImageCapture? = null
-    private var cameraExecutor: ExecutorService = Executors.newSingleThreadExecutor()
+    private var cameraExecutor: ExecutorService? = null
     private var captureJob: Job? = null
     private var isCapturing = false
-
-    fun bindCamera(lifecycleOwner: LifecycleOwner) {
-        val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
-        cameraProviderFuture.addListener({
-            try {
-                val cameraProvider: ProcessCameraProvider = cameraProviderFuture.get()
-                
-                // Preview is not needed for background capture, just ImageCapture
-                imageCapture = ImageCapture.Builder()
-                    .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
-                    .build()
-
-                val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
-
-                cameraProvider.unbindAll()
-                cameraProvider.bindToLifecycle(
-                    lifecycleOwner,
-                    cameraSelector,
-                    imageCapture
-                )
-                Log.d("CameraManager", "Camera bound to lifecycle")
-
-            } catch (exc: Exception) {
-                Log.e("CameraManager", "Use case binding failed", exc)
-            }
-        }, ContextCompat.getMainExecutor(context))
-    }
-
     private var currentScope: CoroutineScope? = null
+
+    // Removed bindCamera(), now handled by CameraUseCaseManager elsewhere
+
+    private fun ensureExecutor(): ExecutorService {
+        if (cameraExecutor?.isShutdown != false) {
+            cameraExecutor = Executors.newSingleThreadExecutor()
+        }
+        return cameraExecutor!!
+    }
 
     fun startCapturing(sessionId: String, scope: CoroutineScope) {
         currentScope = scope
@@ -68,7 +49,7 @@ class CameraManager @Inject constructor(
         captureJob = scope.launch(Dispatchers.IO) {
             while (isActive && isCapturing) {
                 takePicture(sessionId)
-                delay(5000) // 5 seconds interval
+                delay(AppConstants.Camera.TIMELAPSE_INTERVAL_MS) 
             }
         }
     }
@@ -81,46 +62,92 @@ class CameraManager @Inject constructor(
     }
 
     private fun takePicture(sessionId: String) {
-        val imageCapture = imageCapture ?: return
-
-        // Create file with consolidated TimeManager
-        val timestamp = timeManager.getCurrentTime()
-        val photoFile = File(
-            context.getExternalFilesDir(null),
-            "session_media/${sessionId}_${timestamp}.jpg"
-        )
+        val imageCapture = cameraUseCaseManager.getImageCapture()
         
-        // Ensure directory exists
-        photoFile.parentFile?.mkdirs()
+        // Use TimeManager for consolidated time
+        val timestamp = timeManager.getCurrentTime()
+        val photoFile = fileManager.getImageFile(sessionId, timestamp)
 
+        if (imageCapture == null) {
+            Log.w("CameraManager", "ImageCapture is null, using Mock Camera")
+            saveMockImage(sessionId, photoFile, timestamp)
+            return
+        }
+
+        // Output Options
         val outputOptions = ImageCapture.OutputFileOptions.Builder(photoFile).build()
 
-        imageCapture.takePicture(
-            outputOptions,
-            cameraExecutor,
-            object : ImageCapture.OnImageSavedCallback {
-                override fun onError(exc: ImageCaptureException) {
-                    Log.e("CameraManager", "Photo capture failed: ${exc.message}", exc)
-                }
+        try {
+            imageCapture.takePicture(
+                outputOptions,
+                ensureExecutor(), // Use safe executor getter
+                object : ImageCapture.OnImageSavedCallback {
+                    override fun onError(exc: ImageCaptureException) {
+                        Log.e("CameraManager", "Photo capture failed: ${exc.message}", exc)
+                        // Fallback to mock on error
+                        saveMockImage(sessionId, photoFile, timestamp)
+                    }
 
-                override fun onImageSaved(output: ImageCapture.OutputFileResults) {
-                    Log.d("CameraManager", "Photo capture succeeded: ${photoFile.absolutePath}")
-                    // Save to DB via Repository using passed scope
-                    currentScope?.launch(Dispatchers.IO) {
-                        repository.logMedia(
-                            sessionId = sessionId,
-                            type = MediaType.IMAGE,
-                            filePath = photoFile.absolutePath,
-                            decibel = null,
-                            timestamp = timestamp // Pass explicit timestamp
-                        )
+                    override fun onImageSaved(output: ImageCapture.OutputFileResults) {
+                        Log.d("CameraManager", "Photo capture succeeded: ${photoFile.absolutePath}")
+                        logImageToDb(sessionId, photoFile.absolutePath, timestamp)
                     }
                 }
+            )
+        } catch (e: Exception) {
+            Log.e("CameraManager", "Capture request failed", e)
+            saveMockImage(sessionId, photoFile, timestamp)
+        }
+    }
+
+    private fun saveMockImage(sessionId: String, file: File, timestamp: Long) {
+        currentScope?.launch(Dispatchers.IO) {
+            try {
+                // Create a simple black bitmap
+                val bitmap = android.graphics.Bitmap.createBitmap(640, 480, android.graphics.Bitmap.Config.ARGB_8888)
+                val canvas = android.graphics.Canvas(bitmap)
+                canvas.drawColor(android.graphics.Color.DKGRAY)
+                
+                // Add text timestamp
+                val paint = android.graphics.Paint().apply {
+                    color = android.graphics.Color.WHITE
+                    textSize = 40f
+                }
+                canvas.drawText("MOCK CAM", 50f, 100f, paint)
+                canvas.drawText("$timestamp", 50f, 160f, paint)
+
+                // Save to file
+                java.io.FileOutputStream(file).use { out ->
+                    bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 90, out)
+                }
+                
+                Log.d("CameraManager", "Mock photo saved: ${file.absolutePath}")
+                logImageToDb(sessionId, file.absolutePath, timestamp)
+                
+            } catch (e: Exception) {
+                Log.e("CameraManager", "Failed to save mock image", e)
             }
-        )
+        }
+    }
+
+    private fun logImageToDb(sessionId: String, path: String, timestamp: Long) {
+        currentScope?.launch(Dispatchers.IO) {
+            try {
+                repository.logMedia(
+                    sessionId = sessionId,
+                    type = MediaType.IMAGE,
+                    filePath = path,
+                    decibel = null,
+                    timestamp = timestamp
+                )
+            } catch (e: Exception) {
+                Log.e("CameraManager", "Failed to log image", e)
+            }
+        }
     }
 
     fun shutdown() {
-        cameraExecutor.shutdown()
+        cameraExecutor?.shutdownNow()
+        cameraExecutor = null
     }
 }
