@@ -1,4 +1,4 @@
-package com.example.afterlog.service
+package com.example.afterlog.data.local
 
 import android.content.Context
 import dagger.hilt.android.qualifiers.ApplicationContext

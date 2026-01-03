@@ -1,4 +1,4 @@
-package com.example.afterlog.ui.home
+package com.example.afterlog.feature.home
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
