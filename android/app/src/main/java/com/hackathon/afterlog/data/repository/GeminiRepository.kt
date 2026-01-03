@@ -150,6 +150,12 @@ class GeminiRepository @Inject constructor(
      * Uploads audio file to Gemini Files API and returns the file URI and MimeType.
      */
     private suspend fun uploadAudioToGemini(audioFile: File): Pair<String, String>? {
+        // Validate file exists and is readable
+        if (!audioFile.exists() || !audioFile.canRead()) {
+            Log.e("GeminiRepo", "Audio file not accessible: ${audioFile.absolutePath}")
+            return null
+        }
+
         // Determine MIME type based on file extension
         val mimeType = when (audioFile.extension.lowercase()) {
             "mp3" -> "audio/mpeg"
@@ -159,7 +165,10 @@ class GeminiRepository @Inject constructor(
             "ogg" -> "audio/ogg"
             "flac" -> "audio/flac"
             "pcm" -> "audio/L16"  // Raw PCM (16-bit)
-            else -> "audio/mpeg"  // Default fallback
+            else -> {
+                Log.w("GeminiRepo", "Unsupported audio format: ${audioFile.extension}")
+                return null  // Reject unsupported formats
+            }
         }
         
         val uri = filesApiClient.uploadFile(audioFile, mimeType)
