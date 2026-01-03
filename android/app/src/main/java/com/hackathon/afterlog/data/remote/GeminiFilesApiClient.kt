@@ -91,11 +91,12 @@ class GeminiFilesApiClient @Inject constructor() {
         val response = httpClient.newCall(request).execute()
 
         return if (response.isSuccessful) {
-            response.body?.string()?.let { body ->
-                json.decodeFromString<UploadResponse>(body)
+            response.body?.use { body ->
+                json.decodeFromString<UploadResponse>(body.string())
             }
         } else {
-            Log.e(TAG, "Upload HTTP error: ${response.code} - ${response.body?.string()}")
+            response.body?.close() // Ensure close on error
+            Log.e(TAG, "Upload HTTP error: ${response.code} - ${response.message}")
             null
         }
     }
@@ -119,27 +120,29 @@ class GeminiFilesApiClient @Inject constructor() {
 
                 val response = httpClient.newCall(request).execute()
 
-                if (response.isSuccessful) {
-                    val body = response.body?.string() ?: return@repeat
-                    val fileInfo = json.decodeFromString<FileInfoResponse>(body)
+                response.use { resp -> // Use block ensures closure
+                    if (resp.isSuccessful) {
+                        val bodyString = resp.body?.string() ?: return@repeat
+                        val fileInfo = json.decodeFromString<FileInfoResponse>(bodyString)
 
-                    when (fileInfo.state) {
-                        "ACTIVE" -> {
-                            Log.d(TAG, "File is ACTIVE: ${fileInfo.uri}")
-                            return fileInfo.uri
+                        when (fileInfo.state) {
+                            "ACTIVE" -> {
+                                Log.d(TAG, "File is ACTIVE: ${fileInfo.uri}")
+                                return fileInfo.uri
+                            }
+                            "PROCESSING" -> {
+                                Log.d(TAG, "File still PROCESSING, attempt ${attempt + 1}/$maxAttempts")
+                                delay(2000) // Wait 2 seconds before next poll
+                            }
+                            else -> {
+                                Log.e(TAG, "Unexpected file state: ${fileInfo.state}")
+                                return null
+                            }
                         }
-                        "PROCESSING" -> {
-                            Log.d(TAG, "File still PROCESSING, attempt ${attempt + 1}/$maxAttempts")
-                            delay(2000) // Wait 2 seconds before next poll
-                        }
-                        else -> {
-                            Log.e(TAG, "Unexpected file state: ${fileInfo.state}")
-                            return null
-                        }
+                    } else {
+                        Log.e(TAG, "Poll HTTP error: ${resp.code}")
+                        delay(2000)
                     }
-                } else {
-                    Log.e(TAG, "Poll HTTP error: ${response.code}")
-                    delay(2000)
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Poll failed", e)

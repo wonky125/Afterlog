@@ -18,7 +18,7 @@ def load_api_key():
 API_KEY = load_api_key()
 if not API_KEY:
     print("API Key not found in android/local.properties")
-    exit(1)
+    sys.exit(1)
 
 # FORCE UTF-8 for Windows Console
 import sys
@@ -36,7 +36,7 @@ try:
     print(f"Upload complete: {video_file.uri}")
 except Exception as e:
     print(f"Upload failed: {e}")
-    exit(1)
+    sys.exit(1)
 
 # 3. Poll for State
 while video_file.state.name == "PROCESSING":
@@ -46,7 +46,7 @@ while video_file.state.name == "PROCESSING":
 
 if video_file.state.name == "FAILED":
     print("Video processing failed.")
-    exit(1)
+    sys.exit(1)
 
 print("Video is ACTIVE. Generating content...")
 

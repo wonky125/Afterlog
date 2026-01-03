@@ -117,7 +117,13 @@ class GameResultViewModel @Inject constructor(
                 "Highest noise detected: ${logs.maxByOrNull { it.decibel ?: 0 }?.decibel} dB."
 
             // Pass audioFile (even if PCM, it will just be a placeholder or processed in Repo phase 2)
-            val rawResponse = geminiRepository.generateInvestigativeReport(videoFiles, audioFile, contextData)
+            val rawResponse = try {
+                geminiRepository.generateInvestigativeReport(videoFiles, audioFile, contextData)
+            } catch (e: Exception) {
+                Log.e("GameResultVM", "Failed to generate report", e)
+                _uiState.value = ResultUiState.Error("Failed to analyze media: ${e.message}")
+                return@launch
+            }
 
             // 4. Safe JSON Parsing
             val parsedReport = parseGeminiResponse(rawResponse)
@@ -132,12 +138,19 @@ class GameResultViewModel @Inject constructor(
 
     private fun parseGeminiResponse(rawText: String): GeminiReport? {
         return try {
-            // Remove markdown code blocks if present
-            val cleanedJson = rawText
-                .replace("```json", "")
-                .replace("```", "")
-                .trim()
-
+            // Remove markdown code blocks if present (Handle both json and no-lang variants)
+            var cleanedJson = rawText.trim()
+            if (cleanedJson.startsWith("```")) {
+                cleanedJson = cleanedJson.replaceFirst("```json", "", true)
+                    .replaceFirst("```", "", true)
+                
+                // Remove trailing backticks
+                if (cleanedJson.endsWith("```")) {
+                     cleanedJson = cleanedJson.substring(0, cleanedJson.lastIndexOf("```"))
+                }
+            }
+            cleanedJson = cleanedJson.trim()
+            
             json.decodeFromString<GeminiReport>(cleanedJson)
 
         } catch (e: SerializationException) {

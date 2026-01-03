@@ -162,5 +162,14 @@ fun HomeScreen(
 private fun checkPermissions(context: Context): Boolean {
     val camera = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA)
     val audio = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO)
-    return camera == PackageManager.PERMISSION_GRANTED && audio == PackageManager.PERMISSION_GRANTED
+    
+    val notifications = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS)
+    } else {
+        PackageManager.PERMISSION_GRANTED
+    }
+
+    return camera == PackageManager.PERMISSION_GRANTED && 
+           audio == PackageManager.PERMISSION_GRANTED &&
+           notifications == PackageManager.PERMISSION_GRANTED
 }
