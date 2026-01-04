@@ -11,7 +11,6 @@ import com.hackathon.afterlog.R
 // 1920s Newspaper Font Families
 val PlayfairDisplayFamily = FontFamily(
     Font(R.font.playfair_display_regular, FontWeight.Normal)
-    // Removed Font(R.font.playfair_display_bold, FontWeight.Bold) due to crash
 )
 
 val LoraFamily = FontFamily(
@@ -46,7 +45,6 @@ object NewspaperTypography {
     val subheadline = TextStyle(
         fontFamily = LoraFamily,
         fontWeight = FontWeight.Normal,
-        // fontStyle = androidx.compose.ui.text.font.FontStyle.Italic, // CRASH CAUSE
         fontSize = 18.sp,
         lineHeight = 24.sp
     )

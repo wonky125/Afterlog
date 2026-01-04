@@ -37,6 +37,8 @@ class GameResultViewModel @Inject constructor(
     val isTtsLoading: StateFlow<Boolean> = _isTtsLoading.asStateFlow()
 
     fun toggleNarration(text: String) {
+        if (isTtsLoading.value) return // Prevent race condition (double clicks)
+
         viewModelScope.launch {
             if (isPlaying.value) {
                 audioPlayerManager.stop()
@@ -46,8 +48,15 @@ class GameResultViewModel @Inject constructor(
                     // Combine headline + summary + verdict for a good narration flow
                     // The text passed in might be just the summary, but let's assume we want a full report read.
                     // For now, let's use the passed text.
-                    currentAudioFile = ttsRepository.synthesizeText(text)
+                    val generatedFile = ttsRepository.synthesizeText(text)
                     _isTtsLoading.value = false
+
+                    if (generatedFile == null) {
+                         Log.e("GameResultVM", "TTS Synthesis failed - received null file")
+                         // Ideally we would set an error state here, or a one-shot event
+                         return@launch
+                    }
+                    currentAudioFile = generatedFile
                 }
                 currentAudioFile?.let { audioPlayerManager.playFile(it) }
             }

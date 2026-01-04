@@ -243,7 +243,14 @@ fun CinematicNewspaperView(
                                 .padding(horizontal = 16.dp, vertical = 8.dp)
                         ) {
                             val vintageMatrix = remember {
-                                ColorMatrix().apply { setToSaturation(0f) }
+                                ColorMatrix(
+                                    floatArrayOf(
+                                        0.393f, 0.769f, 0.189f, 0f, 0f,
+                                        0.349f, 0.686f, 0.168f, 0f, 0f,
+                                        0.272f, 0.534f, 0.131f, 0f, 0f,
+                                        0f, 0f, 0f, 1f, 0f
+                                    )
+                                )
                             }
 
                             Box(
@@ -423,7 +430,14 @@ fun TimelineEventCard(event: TimelineEvent) {
                         contentDescription = "Event Photo",
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Crop,
-                        colorFilter = ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(0f) })
+                        colorFilter = ColorFilter.colorMatrix(ColorMatrix(
+                            floatArrayOf(
+                                0.393f, 0.769f, 0.189f, 0f, 0f,
+                                0.349f, 0.686f, 0.168f, 0f, 0f,
+                                0.272f, 0.534f, 0.131f, 0f, 0f,
+                                0f, 0f, 0f, 1f, 0f
+                            )
+                        ))
                     )
                 }
             }

@@ -26,13 +26,20 @@ class AudioPlayerManager @Inject constructor(
         try {
             mediaPlayer = MediaPlayer().apply {
                 setDataSource(context, Uri.fromFile(file))
-                prepare()
-                start()
+                setOnPreparedListener { mp ->
+                    mp.start()
+                    _isPlaying.value = true
+                }
                 setOnCompletionListener {
                     _isPlaying.value = false
                 }
+                setOnErrorListener { _, _, _ ->
+                    _isPlaying.value = false
+                    true // Handled
+                }
+                prepareAsync()
             }
-            _isPlaying.value = true
+            // Note: _isPlaying will be set to true in onPrepared
         } catch (e: Exception) {
             e.printStackTrace()
             _isPlaying.value = false

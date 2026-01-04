@@ -7,7 +7,6 @@ import com.hackathon.afterlog.BuildConfig
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -17,7 +16,6 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.File
 import java.io.FileOutputStream
-import java.io.IOException
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -61,25 +59,28 @@ class TtsRepository @Inject constructor(
             .build()
 
         try {
-            val response = client.newCall(request).execute()
-            if (!response.isSuccessful) {
-                Log.e("TtsRepository", "TTS API Error: ${response.code} - ${response.message}")
-                response.body?.string()?.let { Log.e("TtsRepository", "Error Body: $it") }
-                return@withContext null
+            // FIX: Use 'use' to ensure response is closed, and read body string once
+            client.newCall(request).execute().use { response ->
+                val responseBodyStr = response.body?.string()
+
+                if (!response.isSuccessful) {
+                    Log.e("TtsRepository", "TTS API Error: ${response.code} - ${response.message}")
+                    responseBodyStr?.let { Log.e("TtsRepository", "Error Body: $it") }
+                    return@use null
+                }
+
+                if (responseBodyStr == null) return@use null
+
+                val ttsResponse = json.decodeFromString<TtsResponse>(responseBodyStr)
+                val audioBytes = Base64.decode(ttsResponse.audioContent, Base64.DEFAULT)
+
+                // Save to cache dir
+                val audioFile = File(context.cacheDir, filename)
+                FileOutputStream(audioFile).use { it.write(audioBytes) }
+
+                Log.d("TtsRepository", "Audio saved to: ${audioFile.absolutePath}")
+                return@use audioFile
             }
-
-            val responseBody = response.body?.string() ?: return@withContext null
-            val ttsResponse = json.decodeFromString<TtsResponse>(responseBody)
-
-            val audioBytes = Base64.decode(ttsResponse.audioContent, Base64.DEFAULT)
-            
-            // Save to cache dir
-            val audioFile = File(context.cacheDir, filename)
-            FileOutputStream(audioFile).use { it.write(audioBytes) }
-            
-            Log.d("TtsRepository", "Audio saved to: ${audioFile.absolutePath}")
-            return@withContext audioFile
-
         } catch (e: Exception) {
             Log.e("TtsRepository", "TTS Exception", e)
             return@withContext null
