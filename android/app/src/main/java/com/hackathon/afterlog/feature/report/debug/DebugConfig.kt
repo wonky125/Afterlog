@@ -7,7 +7,7 @@ object DebugConfig {
      * Set this to TRUE to force using mock data instead of real API calls.
      * Useful for UI testing and demonstrations.
      */
-    const val USE_MOCK_DATA = true
+    const val USE_MOCK_DATA = false
 
     /**
      * Select which mock data to use.

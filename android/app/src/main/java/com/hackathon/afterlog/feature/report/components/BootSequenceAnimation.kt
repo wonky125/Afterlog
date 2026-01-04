@@ -28,7 +28,7 @@ fun BootSequenceAnimation(
             "CHECKING_PERIPHERALS...",
             "> CAMERA_1: OFFLINE",
             "> CAMERA_2: OFFLINE",
-            "> CAMERA_3: SIGNAL_WEEK",
+            "> CAMERA_3: SIGNAL_WEAK",
             "> BLACK_BOX: CONNECTED",
             "INIT_CRYPTO_MODULE... DONE",
             "ESTABLISHING_UPLINK...",
