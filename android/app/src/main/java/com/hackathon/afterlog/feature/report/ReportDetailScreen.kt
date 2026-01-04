@@ -53,8 +53,14 @@ fun ReportDetailScreen(
         showLoadingScreen = false
     }
 
+    var showBootSequence by remember { mutableStateOf(true) }
+
     Box(modifier = Modifier.fillMaxSize()) {
-        if (showLoadingScreen || uiState is ResultUiState.Loading || uiState is ResultUiState.Analyzing) {
+        if (showBootSequence) {
+            com.hackathon.afterlog.feature.report.components.BootSequenceAnimation {
+                showBootSequence = false
+            }
+        } else if (showLoadingScreen || uiState is ResultUiState.Loading || uiState is ResultUiState.Analyzing) {
             val logCount = if (uiState is ResultUiState.Analyzing) (uiState as ResultUiState.Analyzing).logs.size else 0
             CinematicLoadingView(count = logCount)
         } else {
