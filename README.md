@@ -7,7 +7,10 @@
 **Afterlog** is a versatile Android application designed for the "Google Gemini 3.0" Hackathon. It utilizes multimodal AI (Vision + Audio) to capture, analyze, and reconstruct *any* immersive tabletop game session into a high-fidelity cinematic replay.
 
 > [!NOTE]
-> **Versatility & Compliance**: While the core engine supports any themed game, we use an original **Space Horror** setting for our primary demonstration. This ensures a unique, trademark-safe environment while showcasing the deep integration between visual atmosphere and AI-driven narrative.
+> **Core Engine Versatility**: While this demo showcases a **Space Horror** theme, the core engine is genre-agnostic. By simply swapping the **System Persona** and **UI Skin**, Afterlog can transform into:
+> *   🧙‍♂️ **Fantasy RPM**: A Bard rewriting your D&D session into an epic ballad.
+> *   🔍 **Mystery**: A Private Eye compiling evidence for a murder mystery.
+> *   🚀 **Space Horror (Current Demo)**: A Station AI decrypting black box data.
 
 ---
 

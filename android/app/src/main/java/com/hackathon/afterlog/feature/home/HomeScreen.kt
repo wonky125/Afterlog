@@ -23,24 +23,7 @@ import com.hackathon.afterlog.ui.theme.SpaceTerminalColors
 import com.hackathon.afterlog.ui.theme.SpaceTerminalTypography
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
-
-@Composable
-fun HomeScreen(
-    onNavigateToReport: () -> Unit,
-    viewModel: HomeViewModel = hiltViewModel()
-) {
-    val context = LocalContext.current
-    var hasPermissions by remember { mutableStateOf(checkPermissions(context)) }
-
-    val permissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()
-    ) { permissions ->
-        hasPermissions = permissions.values.all { it }
-    }
-
-    // Gemini Test State
-    val testResult by viewModel.testResult.collectAsState()
-    val isTesting by viewModel.isTesting.collectAsState()
+import androidx.compose.ui.unit.sp
 
 @Composable
 fun HomeScreen(
