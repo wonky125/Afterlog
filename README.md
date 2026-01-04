@@ -4,7 +4,10 @@
 >
 > *Decrypting fleeting screams and atmospheric horror into high-fidelity black box recordings using Gemini 3 Pro.*
 
-**Afterlog** is an Android application designed for the "Google Gemini 3.0" Hackathon. It utilizes multimodal AI (Vision + Audio) to capture, analyze, and reconstruct derelict space station incidents (tabletop horror sessions) into a cinematic "Decrypted Terminal Log".
+**Afterlog** is a versatile Android application designed for the "Google Gemini 3.0" Hackathon. It utilizes multimodal AI (Vision + Audio) to capture, analyze, and reconstruct *any* immersive tabletop game session into a high-fidelity cinematic replay.
+
+> [!NOTE]
+> **Versatility & Compliance**: While the core engine supports any themed game, we use an original **Space Horror** setting for our primary demonstration. This ensures a unique, trademark-safe environment while showcasing the deep integration between visual atmosphere and AI-driven narrative.
 
 ---
 

@@ -1,46 +1,46 @@
-# 05. 시네마틱 리포트 UI (Cinematic Report UI)
+# 05. 우주 기지 터미널 UI (Space Terminal UI)
 
 ## 1. 목적 및 범위
-- **목적**: 분석된 로그 데이터를 "20년대 신문 기사" 컨셉으로 시각화하여 사용자 몰입도 증대.
-- **범위**: Compose UI 레이아웃, 커스텀 폰트/이미지 적용, 반응형 디자인.
+- **목적**: 분석된 로그 데이터를 "복구된 블랙박스 터미널" 컨셉으로 시각화하여 SF 호러 몰입도 증대.
+- **범위**: Compose UI 레이아웃, CRT/Glitch 효과 구현, Monospace 폰트 적용.
 
-## 2. 화면 구성 (NewspaperView)
-- **Container**: `LazyColumn` + `Box` (배경 이미지 Overlay).
-- **Background**: `Color(0xFFF5E6D3)` (베이지색 양피지 톤) + 노이즈 텍스처.
+## 2. 화면 구성 (SpaceTerminalView)
+- **Container**: `Box` + `TerminalSurface` (CRTScanlines + Flicker Overlay).
+- **Background**: `Color(0xFF050505)` (Void Black - 터미널 암전).
 - **Header**:
-  - `Text("EXTRA!", fontSize = 60.sp, fontFamily = Serif)`
-  - 사건 날짜 및 회차 정보.
+  - `Text("SYSTEM STATUS: DECRYPTED", fontSize = 24.sp, fontFamily = Monospace)`
+  - 기지명(AEGIS-7) 및 보안 레벨 표시.
 - **Body**:
-  - **Highlights**: 상단 1면 기사 (가장 중요한 사진 + 요약).
-  - **Timeline**: 시간순 사건 로그 리스트. 좌측 사진 / 우측 기사 내용.
+  - **Main Log**: 상단 분석 텍스트 (타이핑 효과 적용).
+  - **Sequence Logs**: 시간순 데이터 로그. (좌측 타임스탬프 / 우측 분석 내용 / 위험도 색상).
 
 ## 3. 기술 요구사항
-- **Coil**: 로컬 파일 경로 (`File(path)`) 이미지 로딩.
-- **Font**: Google Fonts (`Playfair Display`, `Cinzel` 등 세리프체 권장).
+- **Coil**: 이미지 로딩 시 `Grayscale` 및 `Noise` 필터 적용 (CCTV 느낌).
+- **Font**: Google Fonts (`JetBrains Mono`, `Share Tech Mono` 등 Monospace 권장).
 - **Effect**:
-  - `BlendMode.Multiply`를 이용한 텍스처 합성.
-  - 리스트 스크롤 시 Fade-in 애니메이션.
+  - `GlitchEffect`: 텍스트나 이미지가 지직거리는 애니메이션.
+  - `TypingAnimation`: 텍스트가 한 글자씩 출력되는 레트로 터미널 효과.
 
 ## 4. 데이터 구조 (UiState)
 ```kotlin
-data class ReportUiState(
-    val isLoading: Boolean = false,
-    val title: String = "",
-    val items: List<ReportItem> = emptyList(),
-    val error: String? = null
+data class TerminalUiState(
+    val isDecryptionComplete: Boolean = false,
+    val headline: String = "",
+    val logs: List<TerminalLogItem> = emptyList(),
+    val systemError: String? = null
 )
 
-data class ReportItem(
-    val timestamp: Long,
-    val imagePath: String,
-    val content: String,
-    val isImportant: Boolean
+data class TerminalLogItem(
+    val timestamp: String,
+    val visualFragmentPath: String?,
+    val eventDescription: String,
+    val threatLevel: ThreatLevel // LOW, MED, CRITICAL (Color Mapping)
 )
 ```
 
 ## 5. 구현 우선순위 및 체크리스트
-1. [x] **Mock Data 생성**: 실제 DB 없이 UI 개발이 가능하도록 더미 리스트 생성. *(Preview 함수에 완료)*
-2. [x] **Typography**: 세리프 폰트 파일 `res/font` 추가 및 적용. *(Lora, SpecialElite 적용됨)*
-3. [x] **Layout Structure**: 헤더, 바디, 푸터 영역 잡기. *(LazyColumn 구조 완성)*
-4. [x] **Item Composable**: `EvidenceCard` (사진+글+시간) 컴포넌트 구현. *(독립 컴포넌트 구현 완료)*
-5. [x] **Polish**: 종이 질감 이미지 구해서 배경에 깔고 오버레이 모드 테스트. *(TexturedBackground 구현됨)*
+1. [x] **Mock Data 생성**: 실제 DB 없이 테스트 가능한 우주 기지 시나리오 데이터 생성.
+2. [x] **Typography**: Monospace 폰트 정의 (`SpaceTerminalTypography`).
+3. [x] **Layout Structure**: 헤더, 바디, 터미널 로그 리스트 구조 잡기.
+4. [x] **Item Composable**: `LogSequenceEntry` (터미널 로그 줄) 및 `VisualFragment` (CCTV 카드) 구현.
+5. [x] **Polish**: CRT 스캔라인 및 플리커 이펙트 (`TerminalSurface`) 구현.
