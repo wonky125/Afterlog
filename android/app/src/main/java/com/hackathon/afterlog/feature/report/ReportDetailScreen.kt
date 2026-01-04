@@ -1,19 +1,18 @@
 package com.hackathon.afterlog.feature.report
 
 import android.util.Log
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.hackathon.afterlog.feature.report.components.CinematicLoadingView
-import com.hackathon.afterlog.feature.report.components.CinematicNewspaperView
 import com.hackathon.afterlog.feature.report.components.ErrorView
 import com.hackathon.afterlog.feature.report.components.RawTextFallbackView
+import com.hackathon.afterlog.feature.report.components.SpaceTerminalView
 import com.hackathon.afterlog.feature.report.debug.DebugConfig
 import com.hackathon.afterlog.feature.result.GameResultViewModel
 import com.hackathon.afterlog.feature.result.ResultUiState
-import com.hackathon.afterlog.ui.components.TexturedBackground
-import com.hackathon.afterlog.ui.theme.NewspaperColors
 import kotlinx.coroutines.delay
 
 private const val TAG = "ReportDetailScreen"
@@ -54,10 +53,7 @@ fun ReportDetailScreen(
         showLoadingScreen = false
     }
 
-    TexturedBackground(
-        modifier = Modifier.fillMaxSize(),
-        baseColor = NewspaperColors.FreshPaper
-    ) {
+    Box(modifier = Modifier.fillMaxSize()) {
         if (showLoadingScreen || uiState is ResultUiState.Loading || uiState is ResultUiState.Analyzing) {
             val logCount = if (uiState is ResultUiState.Analyzing) (uiState as ResultUiState.Analyzing).logs.size else 0
             CinematicLoadingView(count = logCount)
@@ -71,7 +67,7 @@ fun ReportDetailScreen(
                         val isPlaying by viewModel.isPlaying.collectAsState()
                         val isTtsLoading by viewModel.isTtsLoading.collectAsState()
 
-                        CinematicNewspaperView(
+                        SpaceTerminalView(
                             report = state.report,
                             isPlaying = isPlaying,
                             isTtsLoading = isTtsLoading,
