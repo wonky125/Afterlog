@@ -9,7 +9,8 @@ data class GeminiReport(
     val atmosphere: String,
     val article: String,              // Main narrative prose (2-3 paragraphs)
     val timeline: List<TimelineEvent>,
-    val verdict: String
+    val verdict: String,
+    val imagePath: String? = null     // Path to the main evidence image
 )
 
 @Serializable
@@ -18,5 +19,6 @@ data class TimelineEvent(
     val speaker: String,          // "Investigator A (Female)"
     val event: String,            // "Door creaks open"
     val description: String,      // Detailed noir description
-    val decibel: Int? = null      // Optional
+    val decibel: Int? = null,     // Optional
+    val imagePath: String? = null // Path to specific event image
 )

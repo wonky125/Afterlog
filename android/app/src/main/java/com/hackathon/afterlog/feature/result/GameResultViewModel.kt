@@ -9,6 +9,8 @@ import com.hackathon.afterlog.data.model.GeminiReport
 import com.hackathon.afterlog.data.model.TimelineEvent
 import com.hackathon.afterlog.data.repository.GeminiRepository
 import com.hackathon.afterlog.data.repository.LocalRepository
+import com.hackathon.afterlog.data.repository.TtsRepository
+import com.hackathon.afterlog.service.AudioPlayerManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -22,8 +24,40 @@ import javax.inject.Inject
 @HiltViewModel
 class GameResultViewModel @Inject constructor(
     private val geminiRepository: GeminiRepository,
-    private val localRepository: LocalRepository
+    private val localRepository: LocalRepository,
+    private val ttsRepository: TtsRepository,
+    private val audioPlayerManager: AudioPlayerManager
 ) : ViewModel() {
+
+    // Expose playing state directly from the manager
+    val isPlaying: StateFlow<Boolean> = audioPlayerManager.isPlaying
+
+    private var currentAudioFile: File? = null
+    private val _isTtsLoading = MutableStateFlow(false)
+    val isTtsLoading: StateFlow<Boolean> = _isTtsLoading.asStateFlow()
+
+    fun toggleNarration(text: String) {
+        viewModelScope.launch {
+            if (isPlaying.value) {
+                audioPlayerManager.stop()
+            } else {
+                if (currentAudioFile == null || !currentAudioFile!!.exists()) {
+                    _isTtsLoading.value = true
+                    // Combine headline + summary + verdict for a good narration flow
+                    // The text passed in might be just the summary, but let's assume we want a full report read.
+                    // For now, let's use the passed text.
+                    currentAudioFile = ttsRepository.synthesizeText(text)
+                    _isTtsLoading.value = false
+                }
+                currentAudioFile?.let { audioPlayerManager.playFile(it) }
+            }
+        }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        audioPlayerManager.release()
+    }
 
     private val _uiState = MutableStateFlow<ResultUiState>(ResultUiState.Loading)
     val uiState: StateFlow<ResultUiState> = _uiState.asStateFlow()
