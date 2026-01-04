@@ -10,9 +10,7 @@ import com.hackathon.afterlog.R
 
 // 1920s Newspaper Font Families
 val PlayfairDisplayFamily = FontFamily(
-    Font(R.font.playfair_display_regular, FontWeight.Normal),
-    Font(R.font.playfair_display_regular, FontWeight.Bold), // Using regular for bold fallback
-    Font(R.font.playfair_display_regular, FontWeight.ExtraBold)
+    Font(R.font.playfair_display_regular, FontWeight.Normal)
 )
 
 val LoraFamily = FontFamily(
@@ -29,7 +27,7 @@ object NewspaperTypography {
     // Masthead - "THE AFTERLOG"
     val masthead = TextStyle(
         fontFamily = PlayfairDisplayFamily,
-        fontWeight = FontWeight.ExtraBold,
+        fontWeight = FontWeight.Bold,
         fontSize = 36.sp,
         letterSpacing = 3.sp
     )
@@ -47,7 +45,6 @@ object NewspaperTypography {
     val subheadline = TextStyle(
         fontFamily = LoraFamily,
         fontWeight = FontWeight.Normal,
-        fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
         fontSize = 18.sp,
         lineHeight = 24.sp
     )
@@ -89,7 +86,7 @@ object NewspaperTypography {
 val Typography = Typography(
     displayLarge = TextStyle(
         fontFamily = PlayfairDisplayFamily,
-        fontWeight = FontWeight.ExtraBold,
+        fontWeight = FontWeight.Bold,
         fontSize = 40.sp,
         lineHeight = 44.sp
     ),

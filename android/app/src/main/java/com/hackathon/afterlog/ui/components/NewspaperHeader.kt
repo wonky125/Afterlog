@@ -3,6 +3,13 @@ package com.hackathon.afterlog.ui.components
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Text
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -26,7 +33,10 @@ import java.util.*
 fun NewspaperHeader(
     modifier: Modifier = Modifier,
     sessionDate: Date = Date(),
-    volumeNumber: Int = 1
+    volumeNumber: Int = 1,
+    onPlayClick: (() -> Unit)? = null,
+    isPlaying: Boolean = false,
+    isLoading: Boolean = false
 ) {
     val dateFormat = remember { SimpleDateFormat("MMMM d, yyyy", Locale.ENGLISH) }
     val formattedDate = dateFormat.format(sessionDate)
@@ -81,6 +91,43 @@ fun NewspaperHeader(
                 style = NewspaperTypography.timestamp,
                 color = NewspaperColors.InkGray
             )
+        }
+
+
+        if (onPlayClick != null) {
+            Spacer(modifier = Modifier.height(12.dp))
+            OutlinedButton(
+                onClick = onPlayClick,
+                colors = ButtonDefaults.outlinedButtonColors(
+                    contentColor = NewspaperColors.InkBlack,
+                    containerColor = NewspaperColors.FreshPaper.copy(alpha = 0.5f)
+                ),
+                border = ButtonDefaults.outlinedButtonBorder.copy(
+                    width = 1.dp,
+                    brush = androidx.compose.ui.graphics.SolidColor(NewspaperColors.InkBlack)
+                )
+            ) {
+                if (isLoading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        color = NewspaperColors.InkBlack,
+                        strokeWidth = 2.dp
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("GENERATING AUDIO...", style = NewspaperTypography.caption)
+                } else {
+                    Icon(
+                        imageVector = if (isPlaying) Icons.Filled.Stop else Icons.Filled.PlayArrow,
+                        contentDescription = if (isPlaying) "Stop" else "Play",
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = if (isPlaying) "STOP NARRATION" else "LISTEN TO REPORT",
+                        style = NewspaperTypography.caption
+                    )
+                }
+            }
         }
 
         Spacer(modifier = Modifier.height(8.dp))
