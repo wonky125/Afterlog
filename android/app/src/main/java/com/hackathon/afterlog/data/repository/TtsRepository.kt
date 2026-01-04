@@ -26,11 +26,11 @@ class TtsRepository @Inject constructor(
     // Construct URL dynamically to ensure we use the latest BuildConfig value
     private fun getUrl(): String {
         val key = BuildConfig.GOOGLE_CLOUD_KEY
-        if (key.isEmpty() || key == "PLACEHOLDER_IF_MISSING_PLEASE_CHECK_YOUR_ENV") {
+        if (key.isEmpty() || key.startsWith("PLACEHOLDER") || key == "\"\"") {
             Log.e("TtsRepository", "CRITICAL: GOOGLE_CLOUD_KEY is empty or missing! Check local.properties")
-        } else {
-            Log.d("TtsRepository", "Using API Key (Length: ${key.length}, Starts with: ${key.take(4)}...)")
+            return ""
         }
+        Log.d("TtsRepository", "Using API Key (Length: ${key.length}, Starts with: ${key.take(4)}...)")
         return "https://texttospeech.googleapis.com/v1/text:synthesize?key=$key"
     }
 
@@ -53,8 +53,14 @@ class TtsRepository @Inject constructor(
         )
 
         val jsonBody = json.encodeToString(requestBody)
+        val url = getUrl()
+        if (url.isEmpty()) {
+            Log.e("TtsRepository", "Cannot make TTS request: Invalid API key")
+            return@withContext null
+        }
+
         val request = Request.Builder()
-            .url(getUrl())
+            .url(url)
             .post(jsonBody.toRequestBody("application/json".toMediaType()))
             .build()
 

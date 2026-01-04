@@ -66,6 +66,7 @@ class GameResultViewModel @Inject constructor(
     override fun onCleared() {
         super.onCleared()
         audioPlayerManager.release()
+        currentAudioFile?.delete()
     }
 
     private val _uiState = MutableStateFlow<ResultUiState>(ResultUiState.Loading)
