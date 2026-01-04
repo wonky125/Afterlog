@@ -39,8 +39,8 @@ data class ReportItem(
 ```
 
 ## 5. 구현 우선순위 및 체크리스트
-1. [ ] **Mock Data 생성**: 실제 DB 없이 UI 개발이 가능하도록 더미 리스트 생성.
-2. [ ] **Typography**: 세리프 폰트 파일 `res/font` 추가 및 적용.
-3. [ ] **Layout Structure**: 헤더, 바디, 푸터 영역 잡기.
-4. [ ] **Item Composable**: `EvidenceCard` (사진+글+시간) 컴포넌트 구현.
-5. [ ] **Polish**: 종이 질감 이미지 구해서 배경에 깔고 오버레이 모드 테스트.
+1. [x] **Mock Data 생성**: 실제 DB 없이 UI 개발이 가능하도록 더미 리스트 생성. *(Preview 함수에 완료)*
+2. [x] **Typography**: 세리프 폰트 파일 `res/font` 추가 및 적용. *(Lora, SpecialElite 적용됨)*
+3. [x] **Layout Structure**: 헤더, 바디, 푸터 영역 잡기. *(LazyColumn 구조 완성)*
+4. [x] **Item Composable**: `EvidenceCard` (사진+글+시간) 컴포넌트 구현. *(독립 컴포넌트 구현 완료)*
+5. [x] **Polish**: 종이 질감 이미지 구해서 배경에 깔고 오버레이 모드 테스트. *(TexturedBackground 구현됨)*

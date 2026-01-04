@@ -1,8 +1,5 @@
 package com.hackathon.afterlog.ui.components
 
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.tween
-import androidx.compose.foundation.layout.Box
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -27,24 +24,19 @@ import kotlinx.coroutines.delay
 fun TypewriterText(
     text: String,
     modifier: Modifier = Modifier,
-    style: TextStyle = NewspaperTypography.headline,
+    style: TextStyle = NewspaperTypography.headline, // Reverted back to original style
     color: Color = NewspaperColors.InkBlack,
     charDelayMs: Long = 30L,
     onComplete: () -> Unit = {}
 ) {
     var displayedText by remember(text) { mutableStateOf("") }
-    var isComplete by remember(text) { mutableStateOf(false) }
 
     LaunchedEffect(text) {
         displayedText = ""
-        isComplete = false
-        
         text.forEachIndexed { index, _ ->
             delay(charDelayMs)
-            displayedText = text.substring(0, index + 1)
+            displayedText = text.take(index + 1)
         }
-        
-        isComplete = true
         onComplete()
     }
 
@@ -74,9 +66,9 @@ fun TypewriterTextWithCursor(
     var showCursor by remember { mutableStateOf(true) }
 
     // Cursor blink animation
-    LaunchedEffect(isComplete) {
+    LaunchedEffect(isComplete, showCursorAfterComplete) {
         if (!isComplete || showCursorAfterComplete) {
-            while (true) {
+            while (true) { // The coroutine will be cancelled when the composable is disposed
                 delay(500)
                 showCursor = !showCursor
             }
@@ -92,7 +84,7 @@ fun TypewriterTextWithCursor(
         
         text.forEachIndexed { index, _ ->
             delay(charDelayMs)
-            displayedText = text.substring(0, index + 1)
+            displayedText = text.take(index + 1)
         }
         
         isComplete = true
