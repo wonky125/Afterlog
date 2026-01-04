@@ -18,6 +18,12 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.hackathon.afterlog.service.AfterLogService
+import com.hackathon.afterlog.ui.components.TerminalSurface
+import com.hackathon.afterlog.ui.theme.SpaceTerminalColors
+import com.hackathon.afterlog.ui.theme.SpaceTerminalTypography
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.border
+import androidx.compose.ui.unit.sp
 
 @Composable
 fun HomeScreen(
@@ -37,125 +43,185 @@ fun HomeScreen(
     val testResult by viewModel.testResult.collectAsState()
     val isTesting by viewModel.isTesting.collectAsState()
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        Text(
-            text = "AfterLog Debugger",
-            style = MaterialTheme.typography.headlineMedium
-        )
-
-        Spacer(modifier = Modifier.height(32.dp))
-
-        if (!hasPermissions) {
-            Button(onClick = {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    permissionLauncher.launch(
-                        arrayOf(
-                            Manifest.permission.CAMERA,
-                            Manifest.permission.RECORD_AUDIO,
-                            Manifest.permission.POST_NOTIFICATIONS
-                        )
-                    )
-                } else {
-                    permissionLauncher.launch(
-                        arrayOf(
-                            Manifest.permission.CAMERA,
-                            Manifest.permission.RECORD_AUDIO
-                        )
-                    )
-                }
-            }) {
-                Text("Grant Permissions")
-            }
-        } else {
-            // Service Controls
-            Button(onClick = {
-                val intent = Intent(context, AfterLogService::class.java)
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    context.startForegroundService(intent)
-                } else {
-                    context.startService(intent)
-                }
-                Toast.makeText(context, "Service Started", Toast.LENGTH_SHORT).show()
-            }) {
-                Text("Start Background Service")
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            Button(
-                onClick = {
-                    val intent = Intent(context, AfterLogService::class.java)
-                    context.stopService(intent)
-                    Toast.makeText(context, "Service Stopped", Toast.LENGTH_SHORT).show()
-                },
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-            ) {
-                Text("Stop Service")
-            }
-
-            Spacer(modifier = Modifier.height(32.dp))
-
-            // Simulation Controls
-            Button(onClick = {
-                val intent = Intent(context, AfterLogService::class.java).apply {
-                    action = AfterLogService.ACTION_SIMULATE_SCREAM
-                }
-                context.startService(intent)
-            }) {
-                Text("DEBUG: Simulate Scream")
-            }
-        }
-
-        Spacer(modifier = Modifier.height(48.dp))
-        HorizontalDivider()
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Gemini Analysis Button
-        Text("Gemini Integration", style = MaterialTheme.typography.titleMedium)
-        Spacer(modifier = Modifier.height(16.dp))
-
-        Button(
-            onClick = onNavigateToReport,
-            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
+    TerminalSurface {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
         ) {
-            Text("Analyze Game (Gemini)")
-        }
-        
-        // Test Connection Button
-        Spacer(modifier = Modifier.height(16.dp))
-        Button(
-            onClick = { viewModel.testGeminiConnection() },
-            enabled = !isTesting
-        ) {
-            if (isTesting) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(24.dp),
-                    color = MaterialTheme.colorScheme.onPrimary
+            // Header Section
+            Text(
+                text = "AEGIS-7 TERMINAL",
+                style = SpaceTerminalTypography.logTitle.copy(fontSize = 28.sp),
+                color = SpaceTerminalColors.PrimaryGreen
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = "SECURE_CONN_ESTABLISHED",
+                style = SpaceTerminalTypography.systemStatus,
+                color = SpaceTerminalColors.SecondaryCyan
+            )
+
+            Spacer(modifier = Modifier.height(48.dp))
+
+            if (!hasPermissions) {
+                TerminalButton(
+                    text = "GRANT_ACCESS_PERMISSIONS",
+                    isWarning = true,
+                    onClick = {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            permissionLauncher.launch(
+                                arrayOf(
+                                    Manifest.permission.CAMERA,
+                                    Manifest.permission.RECORD_AUDIO,
+                                    Manifest.permission.POST_NOTIFICATIONS
+                                )
+                            )
+                        } else {
+                            permissionLauncher.launch(
+                                arrayOf(
+                                    Manifest.permission.CAMERA,
+                                    Manifest.permission.RECORD_AUDIO
+                                )
+                            )
+                        }
+                    }
                 )
             } else {
-                Text("Test Connection")
-            }
-        }
-        
-        testResult?.let { result ->
-            if (result.isNotEmpty()) {
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = result,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = if (result.contains("Success")) 
-                        MaterialTheme.colorScheme.primary 
-                    else 
-                        MaterialTheme.colorScheme.error
+                // Service Control Section
+                TerminalSectionHeader("BACKGROUND_PROCESS_DAEMON")
+                
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Box(modifier = Modifier.weight(1f)) {
+                         TerminalButton(
+                            text = "INIT_SERVICE",
+                            onClick = {
+                                val intent = Intent(context, AfterLogService::class.java)
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                    context.startForegroundService(intent)
+                                } else {
+                                    context.startService(intent)
+                                }
+                                Toast.makeText(context, "Protocol Initiated", Toast.LENGTH_SHORT).show()
+                            }
+                        )
+                    }
+                    Box(modifier = Modifier.weight(1f)) {
+                        TerminalButton(
+                            text = "KILL_PROCESS",
+                            isWarning = true,
+                            onClick = {
+                                val intent = Intent(context, AfterLogService::class.java)
+                                context.stopService(intent)
+                                Toast.makeText(context, "Protocol Terminated", Toast.LENGTH_SHORT).show()
+                            }
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+                
+                TerminalButton(
+                    text = "DEBUG: SIMULATE_BIO_THREAT (SCREAM)",
+                    onClick = {
+                       val intent = Intent(context, AfterLogService::class.java).apply {
+                            action = AfterLogService.ACTION_SIMULATE_SCREAM
+                        }
+                        context.startService(intent)
+                    }
                 )
+
+                Spacer(modifier = Modifier.height(32.dp))
+
+                // Gemini Analysis Section
+                TerminalSectionHeader("MOTH_ER AI CORE")
+
+                TerminalButton(
+                    text = "ACCESS_BLACK_BOX_LOGS",
+                    onClick = onNavigateToReport
+                )
+                
+                Spacer(modifier = Modifier.height(16.dp))
+
+                TerminalButton(
+                    text = if (isTesting) "PINGING_SATELLITE..." else "TEST_UPLINK_CONNECTION",
+                    onClick = { viewModel.testGeminiConnection() },
+                    isEnabled = !isTesting
+                )
+
+                // Test Result Display
+                testResult?.let { result ->
+                    if (result.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .border(1.dp, if (result.contains("Success")) SpaceTerminalColors.PrimaryGreen else SpaceTerminalColors.WarningRed)
+                                .padding(12.dp)
+                        ) {
+                            Text(
+                                text = ">> RESPONSE: $result",
+                                style = SpaceTerminalTypography.systemStatus,
+                                color = if (result.contains("Success")) SpaceTerminalColors.PrimaryGreen else SpaceTerminalColors.WarningRed
+                            )
+                        }
+                    }
+                }
             }
+            
+            Spacer(modifier = Modifier.weight(1f))
+            Text(
+                text = "V1.2.0 // UNAUTHORIZED PERSONNEL WILL BE TERMINATED",
+                style = SpaceTerminalTypography.timestamp,
+                color = SpaceTerminalColors.TextDim,
+                modifier = Modifier.padding(bottom = 16.dp)
+            )
         }
+    }
+}
+
+@Composable
+fun TerminalSectionHeader(title: String) {
+    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp)) {
+        Text(
+            text = ":: $title ::",
+            style = SpaceTerminalTypography.systemStatus,
+            color = SpaceTerminalColors.TextDim
+        )
+        HorizontalDivider(color = SpaceTerminalColors.TextDim.copy(alpha = 0.3f))
+        Spacer(modifier = Modifier.height(12.dp))
+    }
+}
+
+@Composable
+fun TerminalButton(
+    text: String,
+    onClick: () -> Unit,
+    isWarning: Boolean = false,
+    isEnabled: Boolean = true
+) {
+    val mainColor = if (isWarning) SpaceTerminalColors.WarningRed else SpaceTerminalColors.PrimaryGreen
+    
+    androidx.compose.material3.OutlinedButton(
+        onClick = onClick,
+        enabled = isEnabled,
+        modifier = Modifier.fillMaxWidth().height(50.dp),
+        colors = ButtonDefaults.outlinedButtonColors(
+            contentColor = mainColor,
+            disabledContentColor = SpaceTerminalColors.TextDim
+        ),
+        border = BorderStroke(1.dp, if (isEnabled) mainColor else SpaceTerminalColors.TextDim),
+        shape = androidx.compose.ui.graphics.RectangleShape // Retro sharp corners
+    ) {
+        Text(
+             text = text,
+             style = SpaceTerminalTypography.systemStatus
+        )
     }
 }
 

@@ -187,10 +187,10 @@ class GameResultViewModel @Inject constructor(
             if (cleanedJson.startsWith("```")) {
                 cleanedJson = cleanedJson.replaceFirst("```json", "", true)
                     .replaceFirst("```", "", true)
-                
+
                 // Remove trailing backticks
                 if (cleanedJson.endsWith("```")) {
-                     cleanedJson = cleanedJson.substring(0, cleanedJson.lastIndexOf("```"))
+                    cleanedJson = cleanedJson.substring(0, cleanedJson.lastIndexOf("```"))
                 }
             }
             cleanedJson = cleanedJson.trim()
@@ -204,6 +204,20 @@ class GameResultViewModel @Inject constructor(
             Log.e("GameResultVM", "Unexpected parsing error", e)
             null
         }
+    }
+
+    /**
+     * For Debug Mode: Directly inject mock data into the UI state
+     */
+    fun setMockData(mockReport: GeminiReport) {
+        // Use a dummy log list for the UI state if needed, or empty
+        val mockLogs = emptyList<MediaLogEntity>()
+        
+        _uiState.value = ResultUiState.Success(
+            report = mockReport,
+            rawText = null,
+            logs = mockLogs
+        )
     }
 }
 

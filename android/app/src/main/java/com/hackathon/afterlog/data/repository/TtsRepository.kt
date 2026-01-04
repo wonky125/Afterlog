@@ -44,11 +44,11 @@ class TtsRepository @Inject constructor(
     suspend fun synthesizeText(text: String, filename: String = "narration_audio.mp3"): File? = withContext(Dispatchers.IO) {
         val requestBody = TtsRequest(
             input = TtsInput(text = text),
-            voice = TtsVoice(languageCode = "en-US", name = "en-US-Neural2-D"), // Noir style deep male voice
+            voice = TtsVoice(languageCode = "en-US", name = "en-US-Neural2-F"), // MOTH_ER AI Female Voice
             audioConfig = TtsAudioConfig(
                 audioEncoding = "MP3",
-                pitch = -4.0, // Lower pitch for more maturity
-                speakingRate = 0.85 // Slower rate for professional clarity
+                pitch = 0.0, // Neutral pitch for clear AI tone
+                speakingRate = 1.05 // Slightly faster for efficient machine communication
             )
         )
 
