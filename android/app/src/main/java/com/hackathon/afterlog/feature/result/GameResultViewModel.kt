@@ -79,104 +79,64 @@ class GameResultViewModel @Inject constructor(
 
     fun loadSessionData(sessionId: String) {
         viewModelScope.launch {
-            _uiState.value = ResultUiState.Loading
+            try {
+                _uiState.value = ResultUiState.Loading
 
-            // 1. Fetch Logs from DB
-            // Assuming we have a getSessionLogs function in LocalRepository
-            // Use dummy data or implement retrieval if needed
-             val logs = localRepository.getSessionLogs(sessionId)
-             // val logs = emptyList<MediaLog>() // Placeholder
+                // 1. Fetch Logs from DB
+                val logs = localRepository.getSessionLogs(sessionId)
+                Log.d("GameResultVM", "Loaded logs for session $sessionId: ${logs.size} items")
 
-            if (logs.isEmpty()) {
-                if (sessionId == "last_session") {
-                    // DEBUG: Inject Mock Data for UI Verification
-                    Log.d("GameResultVM", "No real logs found, using MOCK DATA for verification.")
-                    val mockReport = GeminiReport(
-                        headline = "THE MIDNIGHT WHISPER",
-                        summary = "A phantom voice was recorded in the living room exactly at 03:00 AM, coincident with a sudden temperature drop.",
-                        atmosphere = "Chilling, suspenseful, and undeniably supernatural.",
-                        article = "The clock struck three when the first whisper echoed through the empty halls of the old manor. Our investigators—seasoned veterans of the unexplained—froze in place as the temperature plummeted. What happened next would shake even the most hardened skeptic.\n\nMs. Adams was the first to hear it: a faint plea for help, disembodied and desperate. The recording equipment captured every chilling syllable. By dawn, the team had collected evidence that defied all rational explanation.\n\nThis reporter has covered many cases in The Dark City, but none quite like this. The voice on that recording speaks to something beyond our understanding—a cry from the other side that demands to be heard.",
-                        timeline = listOf(
-                            TimelineEvent("02:59:55", "Environment", "Silence", "Ambient noise level drops significantly.", 30),
-                            TimelineEvent("03:00:00", "Unknown Entity", "Whisper", "A faint voice says 'Help me'.", 45),
-                            TimelineEvent("03:00:05", "User", "Gasp", "User reacts to the sound.", 60)
-                        ),
-                        verdict = "High Probability of Class A Apparition."
-                    )
+                if (logs.isEmpty()) {
+                    if (sessionId == "last_session") {
+                        // ... (Mock logic - omitted)
+                         _uiState.value = ResultUiState.Error("No data found (Mock Disabled)")
+                         return@launch
+                    } else {
+                        Log.w("GameResultVM", "No logs found, aborting analysis.")
+                        _uiState.value = ResultUiState.Error("No logs found for session $sessionId")
+                        return@launch
+                    }
+                }
 
-                    val mockLogs = listOf(
-                         MediaLogEntity(
-                             sessionId = "mock",
-                             type = MediaType.AUDIO_SICK,
-                             filePath = "mock_audio.mp3",
-                             timestamp = System.currentTimeMillis(),
-                             decibel = 45
-                         ),
-                         MediaLogEntity(
-                             sessionId = "mock",
-                             type = MediaType.VIDEO_HIGHLIGHT,
-                             filePath = "mock_video.mp4",
-                             timestamp = System.currentTimeMillis() + 5000,
-                             decibel = 60
-                         )
-                    )
+                // 2. Identify "Highlight" videos
+                val videoFiles = logs
+                    .filter { it.filePath.contains("highlight") }
+                    .map { File(it.filePath) }
+                    .filter { it.exists() }
+                
+                // 3. Find Audio File
+                val audioLog = logs.firstOrNull { it.filePath.endsWith(".pcm") }
+                val audioFile = audioLog?.let { File(it.filePath) }
+                
+                // 3. Trigger Gemini Analysis (REAL CONNECTION)
+                _uiState.value = ResultUiState.Analyzing(logs)
 
-                    _uiState.value = ResultUiState.Success(
-                        report = mockReport,
-                        rawText = null,
-                        logs = mockLogs
-                    )
-                    return@launch
-                } else {
-                    _uiState.value = ResultUiState.Error("No logs found for session $sessionId")
+                val contextData = "Session: $sessionId. Clues found: ${logs.size}. " +
+                    "Highest noise detected: ${logs.maxByOrNull { it.decibel ?: 0 }?.decibel} dB."
+
+                Log.d("GameResultVM", "Calling GeminiRepository.generateInvestigativeReport...")
+                
+                // Pass audioFile (even if PCM, it will just be a placeholder or processed in Repo phase 2)
+                val rawResponse = try {
+                    geminiRepository.generateInvestigativeReport(videoFiles, audioFile, contextData)
+                } catch (e: Exception) {
+                    Log.e("GameResultVM", "Failed to generate report", e)
+                    _uiState.value = ResultUiState.Error("Failed to analyze media: ${e.message}")
                     return@launch
                 }
-            }
 
-            // 2. Identify "Highlight" videos
-            // Videos saved in 'session_media/highlight_...'
-            val videoFiles = logs
-                .filter { it.filePath.contains("highlight") }
-                .map { File(it.filePath) }
-                .filter { it.exists() }
+                // 4. Safe JSON Parsing
+                val parsedReport = parseGeminiResponse(rawResponse)
 
-            if (videoFiles.isEmpty()) {
-                 _uiState.value = ResultUiState.Success(
-                     report = null,
-                     rawText = "No video evidence collected.",
-                     logs = logs
-                 )
-                 return@launch
-            }
-
-            // Find Audio File
-            val audioFile = logs
-                .firstOrNull { it.filePath.endsWith(".pcm") } // Currently PCM based on AudioMonitor
-                ?.let { File(it.filePath) }
-
-            // 3. Trigger Gemini Analysis (REAL CONNECTION)
-            _uiState.value = ResultUiState.Analyzing(logs)
-
-            val contextData = "Session: $sessionId. Clues found: ${logs.size}. " +
-                "Highest noise detected: ${logs.maxByOrNull { it.decibel ?: 0 }?.decibel} dB."
-
-            // Pass audioFile (even if PCM, it will just be a placeholder or processed in Repo phase 2)
-            val rawResponse = try {
-                geminiRepository.generateInvestigativeReport(videoFiles, audioFile, contextData)
+                _uiState.value = ResultUiState.Success(
+                    report = parsedReport,
+                    rawText = if (parsedReport == null) rawResponse else null,
+                    logs = logs
+                )
             } catch (e: Exception) {
-                Log.e("GameResultVM", "Failed to generate report", e)
-                _uiState.value = ResultUiState.Error("Failed to analyze media: ${e.message}")
-                return@launch
+                Log.e("GameResultVM", "Error in loadSessionData", e)
+                _uiState.value = ResultUiState.Error("Error: ${e.message}")
             }
-
-            // 4. Safe JSON Parsing
-            val parsedReport = parseGeminiResponse(rawResponse)
-
-            _uiState.value = ResultUiState.Success(
-                report = parsedReport,
-                rawText = if (parsedReport == null) rawResponse else null,
-                logs = logs
-            )
         }
     }
 

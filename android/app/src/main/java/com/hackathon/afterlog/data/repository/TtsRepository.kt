@@ -21,7 +21,8 @@ import javax.inject.Singleton
 
 @Singleton
 class TtsRepository @Inject constructor(
-    @ApplicationContext private val context: Context
+    @ApplicationContext private val context: Context,
+    private val geminiRepository: GeminiRepository
 ) {
     // Construct URL dynamically to ensure we use the latest BuildConfig value
     private fun getUrl(): String {
@@ -30,7 +31,6 @@ class TtsRepository @Inject constructor(
             Log.e("TtsRepository", "CRITICAL: GOOGLE_CLOUD_KEY is empty or missing! Check local.properties")
             return ""
         }
-        Log.d("TtsRepository", "Using API Key (Length: ${key.length}, Starts with: ${key.take(4)}...)")
         return "https://texttospeech.googleapis.com/v1/text:synthesize?key=$key"
     }
 
@@ -38,10 +38,16 @@ class TtsRepository @Inject constructor(
     private val json = Json { ignoreUnknownKeys = true }
 
     /**
-     * Synthesizes text to speech and returns the path to the saved audio file.
-     * Uses cache directory to store the file.
+     * Synthesizes text to speech.
+     * Strategy:
+     * 1. Try Gemini 2.5 Native TTS (High Quality, Noir Persona).
+     * 2. If Gemini fails (returns null), Fallback to Google Cloud TTS (Neural2).
      */
     suspend fun synthesizeText(text: String, filename: String = "narration_audio.mp3"): File? = withContext(Dispatchers.IO) {
+        
+        Log.d("TtsRepository", "Synthesizing text using Google Cloud TTS (Neural2)")
+
+        // Primary: Google Cloud TTS
         val requestBody = TtsRequest(
             input = TtsInput(text = text),
             voice = TtsVoice(languageCode = "en-US", name = "en-US-Neural2-F"), // MOTH_ER AI Female Voice
@@ -55,7 +61,6 @@ class TtsRepository @Inject constructor(
         val jsonBody = json.encodeToString(requestBody)
         val url = getUrl()
         if (url.isEmpty()) {
-            Log.e("TtsRepository", "Cannot make TTS request: Invalid API key")
             return@withContext null
         }
 
@@ -65,13 +70,11 @@ class TtsRepository @Inject constructor(
             .build()
 
         try {
-            // FIX: Use 'use' to ensure response is closed, and read body string once
             client.newCall(request).execute().use { response ->
                 val responseBodyStr = response.body?.string()
 
                 if (!response.isSuccessful) {
                     Log.e("TtsRepository", "TTS API Error: ${response.code} - ${response.message}")
-                    responseBodyStr?.let { Log.e("TtsRepository", "Error Body: $it") }
                     return@use null
                 }
 

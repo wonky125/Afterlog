@@ -6,8 +6,8 @@ import kotlinx.serialization.Serializable
 data class GeminiReport(
     val headline: String,
     val summary: String,
-    val atmosphere: String,
-    val article: String,              // Main narrative prose (2-3 paragraphs)
+    val atmosphere: String = "",
+    val article: String = "",         // Main narrative prose (2-3 paragraphs)
     val timeline: List<TimelineEvent>,
     val verdict: String,
     val imagePath: String? = null     // Path to the main evidence image

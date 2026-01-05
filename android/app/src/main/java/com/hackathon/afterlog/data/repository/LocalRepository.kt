@@ -60,6 +60,19 @@ class LocalRepository @Inject constructor(
     }
 
     suspend fun getSessionLogs(sessionId: String): List<MediaLogEntity> {
-        return logDao.getLogsBySessionSuspend(sessionId)
+        val targetId = if (sessionId == "last_session") {
+            try {
+                // Determine the actual last session
+                val lastSession = sessionDao.getLastSession()
+                lastSession?.id ?: sessionId
+            } catch (e: Exception) {
+                // Fallback or log error if DAO method missing
+                sessionId
+            }
+        } else {
+            sessionId
+        }
+        
+        return logDao.getLogsBySessionSuspend(targetId)
     }
 }

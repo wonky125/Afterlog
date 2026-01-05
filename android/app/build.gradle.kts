@@ -41,7 +41,7 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -116,7 +116,7 @@ dependencies {
     implementation(libs.androidx.camera.video)
     implementation(libs.androidx.camera.view)
 
-    // Gemini
+    // Google AI SDK (Generative AI)
     implementation(libs.google.generativeai)
     
     // NTP Clock
@@ -133,7 +133,7 @@ dependencies {
     implementation(libs.androidx.media3.ui)
 
     // Kotlin Serialization
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.0")
+    implementation(libs.kotlinx.serialization.json)
 
     // OkHttp (for Gemini Files API)
     implementation("com.squareup.okhttp3:okhttp:4.12.0")

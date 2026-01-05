@@ -31,13 +31,16 @@ class MainActivity : ComponentActivity() {
                     NavHost(navController = navController, startDestination = Screen.Home.route) {
                         composable(Screen.Home.route) {
                             HomeScreen(
-                                onNavigateToReport = {
-                                    navController.navigate(Screen.ReportDetail.route)
+                                onNavigateToReport = { sessionId ->
+                                    navController.navigate(Screen.ReportDetail.createRoute(sessionId))
                                 }
                             )
                         }
-                        composable(Screen.ReportDetail.route) {
-                            ReportDetailScreen()
+                        composable(
+                            route = Screen.ReportDetail.route
+                        ) { backStackEntry ->
+                            val sessionId = backStackEntry.arguments?.getString("sessionId") ?: "last_session"
+                            ReportDetailScreen(sessionId = sessionId)
                         }
                     }
                 }

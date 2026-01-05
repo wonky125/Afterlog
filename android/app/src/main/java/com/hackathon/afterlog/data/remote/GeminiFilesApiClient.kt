@@ -88,16 +88,22 @@ class GeminiFilesApiClient @Inject constructor() {
             .post(requestBody)
             .build()
 
-        val response = httpClient.newCall(request).execute()
+        try {
+            val response = httpClient.newCall(request).execute()
+            val responseBodyString = response.body?.string()
 
-        return if (response.isSuccessful) {
-            response.body?.use { body ->
-                json.decodeFromString<UploadResponse>(body.string())
+            Log.d(TAG, "Upload Response Code: ${response.code}")
+            
+            if (response.isSuccessful && responseBodyString != null) {
+                Log.d(TAG, "Upload Response Body: $responseBodyString") // Debug raw JSON
+                return json.decodeFromString<UploadResponse>(responseBodyString)
+            } else {
+                Log.e(TAG, "Upload Failed. Code: ${response.code}, Message: ${response.message}, Body: $responseBodyString")
+                return null
             }
-        } else {
-            response.body?.close() // Ensure close on error
-            Log.e(TAG, "Upload HTTP error: ${response.code} - ${response.message}")
-            null
+        } catch (e: Exception) {
+            Log.e(TAG, "Upload Exception", e)
+            return null
         }
     }
 

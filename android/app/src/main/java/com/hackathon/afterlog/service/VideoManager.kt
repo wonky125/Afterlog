@@ -138,12 +138,13 @@ class VideoManager @Inject constructor(
                     when(recordEvent) {
                         is VideoRecordEvent.Start -> {
                             Log.d("VideoManager", "Started chunk: ${tempFile.name}")
-                            // addToBuffer is now suspend, call from coroutine
-                            currentScope?.launch { addToBuffer(tempFile) } ?: Log.w("VideoManager", "Scope null, skip buffer add")
+                            // Do NOT add to buffer here. Only add fully finalized files.
                         }
                         is VideoRecordEvent.Finalize -> {
                             if (!recordEvent.hasError()) {
                                 Log.d("VideoManager", "Finalized chunk: ${tempFile.name}")
+                                // Add to buffer ONLY when file is complete and safe (MP4 header written)
+                                currentScope?.launch { addToBuffer(tempFile) } 
                             } else {
                                 // If error, file might be partial.
                                 Log.e("VideoManager", "Video capture error: ${recordEvent.error}")
