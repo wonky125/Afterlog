@@ -13,7 +13,7 @@
 *   **Project Name**: Afterlog
 *   **Core Concept**: Captures audio (screams) and vision (board state) during tabletop games to generate a cinematic highlight log tailored to the game's world.
 *   **Core Engine Versatility**: While this demo showcases a **1920s Noir Mystery** theme, the core engine is genre-agnostic. By simply swapping the System Persona and UI Skin, Afterlog can transform into:
-    *   🧙‍♂️ **Fantasy RPM**: A Bard rewriting your D&D session into an epic ballad.
+    *   🧙‍♂️ **Fantasy RPM**: A Bard rewriting your session into an epic ballad.
     *   🔍 **Mystery (Current Demo)**: A Private Eye compiling evidence for a murder mystery.
     *   🚀 **Space Horror**: A Station AI decrypting black box data.
 *   **Hackathon Deadline**: Feb 9, 2026, 5:00 PM (PST).
