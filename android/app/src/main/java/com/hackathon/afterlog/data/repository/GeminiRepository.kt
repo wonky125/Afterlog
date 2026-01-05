@@ -140,12 +140,23 @@ class GeminiRepository @Inject constructor(
             "ogg" -> "audio/ogg"
             "flac" -> "audio/flac"
             "pcm" -> {
-                // Convert PCM to WAV before upload to ensure correct headers/format for Gemini
+                // Convert PCM to WAV before upload
                 val wavFile = convertPcmToWav(audioFile)
                 if (wavFile != null) {
-                    return uploadAudioToGemini(wavFile)
+                    val wavMimeType = "audio/wav"
+                    Log.d("GeminiRepo", "Uploading converted audio: ${wavFile.name} ($wavMimeType)")
+                    val uri = filesApiClient.uploadFile(wavFile, wavMimeType)
+                    return if (uri != null) {
+                        Log.d("GeminiRepo", "Audio upload SUCCESS. URI: $uri")
+                        Pair(uri, wavMimeType)
+                    } else {
+                        Log.e("GeminiRepo", "Audio upload FAILED. URI is null.")
+                        null
+                    }
+                } else {
+                    Log.e("GeminiRepo", "PCM conversion failed, skipping upload.")
+                    null
                 }
-                "audio/L16" 
             }
             else -> {
                 Log.w("GeminiRepo", "Unsupported audio format: ${audioFile.extension}")
@@ -256,7 +267,7 @@ class GeminiRepository @Inject constructor(
             header[30] = ((byteRate shr 16) and 0xff).toByte()
             header[31] = ((byteRate shr 24) and 0xff).toByte()
             
-            header[32] = (channels * 16 / 8).toByte() // block align (Should be 2 for Mono 16-bit)
+            header[32] = 2.toByte() // block align (Mono 16-bit = 2 bytes per sample)
             header[33] = 0
             
             header[34] = 16 // bits per sample
