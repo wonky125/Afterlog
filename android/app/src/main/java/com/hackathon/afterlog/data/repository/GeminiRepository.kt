@@ -224,7 +224,7 @@ class GeminiRepository @Inject constructor(
             
             val header = ByteArray(44)
             val totalDataLen = pcmData.size.toLong() + 36
-            val bitrate = sampleRate * channels * 16
+
             
             header[0] = 'R'.code.toByte() 
             header[1] = 'I'.code.toByte()
