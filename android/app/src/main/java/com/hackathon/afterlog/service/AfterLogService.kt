@@ -135,7 +135,11 @@ class AfterLogService : LifecycleService() {
         lifecycleScope.launch(Dispatchers.IO) {
             try {
                 kotlinx.coroutines.delay(500) // Small delay to let system settle
-                audioMonitor.startMonitoring(sessionId, this)
+                audioMonitor.startMonitoring(sessionId, this) { db ->
+                    // UI and Notification feedback on detection
+                    showToast("Scream Detected! ($db dB)")
+                    updateNotification("Recording active (Scream Detected!)")
+                }
                 withContext(Dispatchers.Main) {
                     Log.d(TAG, "Audio monitoring started")
                 }

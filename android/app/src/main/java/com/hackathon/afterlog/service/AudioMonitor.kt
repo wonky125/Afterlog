@@ -1,4 +1,4 @@
-package com.hackathon.afterlog.service
+ï»¿package com.hackathon.afterlog.service
 
 import android.Manifest
 import android.content.Context
@@ -36,6 +36,7 @@ class AudioMonitor @Inject constructor(
     private var recordingJob: Job? = null
     private var isRecording = false
     private var currentScope: CoroutineScope? = null
+    private var onScreamDetected: ((Int) -> Unit)? = null
 
     // File Output
     private var pcmFile: File? = null
@@ -45,13 +46,18 @@ class AudioMonitor @Inject constructor(
     private val channelConfig = AudioFormat.CHANNEL_IN_MONO
     private val audioFormat = AudioFormat.ENCODING_PCM_16BIT
 
-    fun startMonitoring(sessionId: String, scope: CoroutineScope) {
+    fun startMonitoring(
+        sessionId: String,
+        scope: CoroutineScope,
+        onScreamDetected: (Int) -> Unit
+    ) {
         if (isRecording) {
             Log.w(TAG, "Already recording, skipping start")
             return
         }
 
-        currentScope = scope
+        this.currentScope = scope
+        this.onScreamDetected = onScreamDetected
 
         // Check permission
         // Permission check is usually done in Activity/Service before calling this, but acceptable here if context available.
@@ -286,7 +292,9 @@ class AudioMonitor @Inject constructor(
     }
 
     fun handleScreamEvent(sessionId: String, db: Int) {
-        Log.i(TAG, "?”Š SCREAM DETECTED! dB: $db")
+        Log.i(TAG, "SCREAM DETECTED! dB: $db")
+        
+        onScreamDetected?.invoke(db)
         
         videoManager.saveBufferForEvent(sessionId)
         

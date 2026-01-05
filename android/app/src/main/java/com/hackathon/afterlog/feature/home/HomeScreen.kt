@@ -21,7 +21,7 @@ import com.hackathon.afterlog.service.AfterLogService
 
 @Composable
 fun HomeScreen(
-    onNavigateToReport: () -> Unit,
+    onNavigateToReport: (String) -> Unit,
     viewModel: HomeViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
@@ -121,7 +121,7 @@ fun HomeScreen(
         Spacer(modifier = Modifier.height(16.dp))
 
         Button(
-            onClick = onNavigateToReport,
+            onClick = { onNavigateToReport("last_session") },
             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
         ) {
             Text("Analyze Game (Gemini)")

@@ -20,4 +20,7 @@ interface SessionDao {
 
     @Query("UPDATE sessions SET endTime = :endTime WHERE id = :sessionId")
     suspend fun updateSessionEndTime(sessionId: String, endTime: Long)
+
+    @Query("SELECT * FROM sessions ORDER BY startTime DESC LIMIT 1")
+    suspend fun getLastSession(): SessionEntity?
 }
