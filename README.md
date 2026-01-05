@@ -1,35 +1,37 @@
-# Afterlog (Survivor's Pulse) 🌌🛰️
+# Afterlog (Cinematic Replay) 🎞️
 
-> **"What if your last transmission was recovered?"**
+> **"If board games had a 'Replay' feature..."**
 >
-> *Decrypting fleeting screams and atmospheric horror into high-fidelity black box recordings using Gemini 3 Pro.*
+> *Transforming fleeting screams and moments into an eternal cinematic horror movie using Gemini 3 Pro.*
 
-**Afterlog** is a versatile Android application designed for the "Google Gemini 3.0" Hackathon. It utilizes multimodal AI (Vision + Audio) to capture, analyze, and reconstruct *any* immersive tabletop game session into a high-fidelity cinematic replay.
-
-> [!NOTE]
-> **Core Engine Versatility**: While this demo showcases a **Space Horror** theme, the core engine is genre-agnostic. By simply swapping the **System Persona** and **UI Skin**, Afterlog can transform into:
-> *   🧙‍♂️ **Fantasy RPM**: A Bard rewriting your D&D session into an epic ballad.
-> *   🔍 **Mystery**: A Private Eye compiling evidence for a murder mystery.
-> *   🚀 **Space Horror (Current Demo)**: A Station AI decrypting black box data.
+**Afterlog** is an Android application designed for the "Google Gemini 3.0" Hackathon. It utilizes multimodal AI (Vision + Audio) to capture, analyze, and reenact tabletop game sessions as a cinematic "Newspaper Report" or highlight video.
 
 ---
 
-## 💡 Key Features
+### 1. Project Overview & Deadline 🗓️
 
-### 1. Intelligent Capture (The Eyes & Ears)
-- **Scream Detection**: Automatically triggers recording when audio levels exceed **80dB** (e.g., screams of terror or joy).
-- **Time-Lapse Vision**: Silently captures the board state every 5 seconds in the background.
-- **Privacy-First**: Uses on-device pre-processing to filter non-relevant data.
+*   **Project Name**: Afterlog
+*   **Core Concept**: Captures audio (screams) and vision (board state) during tabletop games to generate a cinematic highlight log tailored to the game's world.
+*   **Core Engine Versatility**: While this demo showcases a **1920s Noir Mystery** theme, the core engine is genre-agnostic. By simply swapping the System Persona and UI Skin, Afterlog can transform into:
+    *   🧙‍♂️ **Fantasy RPM**: A Bard rewriting your D&D session into an epic ballad.
+    *   🔍 **Mystery (Current Demo)**: A Private Eye compiling evidence for a murder mystery.
+    *   🚀 **Space Horror**: A Station AI decrypting black box data.
+*   **Hackathon Deadline**: Feb 9, 2026, 5:00 PM (PST).
+*   **Deliverables**:
+    *   New Android App
+    *   Demo Video (< 3 min)
+    *   Public Code Repository (GitHub)
 
-### 2. Gemini 3.0 Pro Analysis (The Core AI: MOTH_ER)
-- **Multimodal Understanding**: Analyzes hours of audio and photo sequences to understand the "context" of the station breach.
-- **Narrative Generation**: Reconstructs the chaotic game session into an analytical log, written in the persona of **MOTH_ER (The Station's Decaying AI)**.
-- **Biometric Monitoring**: Identifies survivor IDs (Speaker Diarization) and decibel-level stress markers using Gemini's native processing.
+### 2. Concept: "What if Board Games bad a 'Replay'?"
 
-### 3. High-Tech Terminal UX (The Recovery)
-- **Terminal Review**: Presents the game log as a decrypted holographic terminal, complete with scanlines and glitch effects.
-- **Hybrid Data Synthesis**: Merges real video clips, CCTV-style fragments, and AI-generated voice logs (TTS) into a final transmission (.mp4).
-- **Sequence Sync**: Navigate the black box log directly from individual sensor events.
+> "In video games like LoL, you can watch a replay of your 'God Play' moments. But in board games? You laugh for 3 hours, fold the board, and the memories fade. We wanted to fill this gap with AI."
+
+To achieve this, we need to understand both the **visual changes of the board** and the **voices (screams) of the players** simultaneously. With the arrival of **Gemini 3 Pro**'s overwhelming multimodal capabilities, this is finally possible. **[Afterlog]** preserves the fleeting analog experience as an eternal digital 'Cinematic Replay'.
+
+### 3. Cinematic Replay (The Experience)
+- **Newspaper View**: Presents the game log as a vintage immersive newspaper article.
+- **Hybrid Video Synthesis**: Merges real video clips, time-lapse photos, and AI-generated narration (TTS) into a final MP4 video.
+- **Sync-Play**: Click on any "investigation log" in the report to instantly jump to that moment in the replay video.
 
 ---
 
