@@ -1,10 +1,16 @@
-# Afterlog (Cinematic Replay) 🎞️
+# Afterlog (Survivor's Pulse) 🌌🛰️
 
-> **"If board games had a 'Replay' feature..."**
+> **"What if your last transmission was recovered?"**
 >
-> *Transforming fleeting screams and moments into an eternal cinematic horror movie using Gemini 3 Pro.*
+> *Decrypting fleeting screams and atmospheric horror into high-fidelity black box recordings using Gemini 3 Pro.*
 
-**Afterlog** is an Android application designed for the "Google Gemini 3.0" Hackathon. It utilizes multimodal AI (Vision + Audio) to capture, analyze, and reenact tabletop game sessions as a cinematic "Newspaper Report" or highlight video.
+**Afterlog** is a versatile Android application designed for the "Google Gemini 3.0" Hackathon. It utilizes multimodal AI (Vision + Audio) to capture, analyze, and reconstruct *any* immersive tabletop game session into a high-fidelity cinematic replay.
+
+> [!NOTE]
+> **Core Engine Versatility**: While this demo showcases a **Space Horror** theme, the core engine is genre-agnostic. By simply swapping the **System Persona** and **UI Skin**, Afterlog can transform into:
+> *   🧙‍♂️ **Fantasy RPM**: A Bard rewriting your D&D session into an epic ballad.
+> *   🔍 **Mystery**: A Private Eye compiling evidence for a murder mystery.
+> *   🚀 **Space Horror (Current Demo)**: A Station AI decrypting black box data.
 
 ---
 
@@ -15,15 +21,15 @@
 - **Time-Lapse Vision**: Silently captures the board state every 5 seconds in the background.
 - **Privacy-First**: Uses on-device pre-processing to filter non-relevant data.
 
-### 2. Gemini 3.0 Pro Analysis (The Brain)
-- **Multimodal Understanding**: Analyzes hours of audio and photo sequences to understand the "context" of the game.
-- **Narrative Generation**: Reconstructs the chaotic game session into a coherent story, written in the persona of a **1920s Investigative Journalist**.
-- **Speaker Diarization**: Identifies who screamed and why, using Gemini's native audio processing capabilities.
+### 2. Gemini 3.0 Pro Analysis (The Core AI: MOTH_ER)
+- **Multimodal Understanding**: Analyzes hours of audio and photo sequences to understand the "context" of the station breach.
+- **Narrative Generation**: Reconstructs the chaotic game session into an analytical log, written in the persona of **MOTH_ER (The Station's Decaying AI)**.
+- **Biometric Monitoring**: Identifies survivor IDs (Speaker Diarization) and decibel-level stress markers using Gemini's native processing.
 
-### 3. Cinematic Replay (The Experience)
-- **Newspaper View**: Presents the game log as a vintage immersive newspaper article.
-- **Hybrid Video Synthesis**: Merges real video clips, time-lapse photos, and AI-generated narration (TTS) into a final MP4 video.
-- **Sync-Play**: Click on any "investigation log" in the report to instantly jump to that moment in the replay video.
+### 3. High-Tech Terminal UX (The Recovery)
+- **Terminal Review**: Presents the game log as a decrypted holographic terminal, complete with scanlines and glitch effects.
+- **Hybrid Data Synthesis**: Merges real video clips, CCTV-style fragments, and AI-generated voice logs (TTS) into a final transmission (.mp4).
+- **Sequence Sync**: Navigate the black box log directly from individual sensor events.
 
 ---
 

@@ -82,8 +82,40 @@ object NewspaperTypography {
     )
 }
 
+// Space Horror Terminal Typography
+object SpaceTerminalTypography {
+    val logTitle = TextStyle(
+        fontFamily = FontFamily.Monospace,
+        fontWeight = FontWeight.Bold,
+        fontSize = 28.sp,
+        letterSpacing = 4.sp
+    )
+    
+    val logBody = TextStyle(
+        fontFamily = FontFamily.Monospace,
+        fontWeight = FontWeight.Normal,
+        fontSize = 16.sp,
+        lineHeight = 24.sp,
+        letterSpacing = 0.5.sp
+    )
+    
+    val systemStatus = TextStyle(
+        fontFamily = FontFamily.Monospace,
+        fontWeight = FontWeight.Bold,
+        fontSize = 14.sp,
+        letterSpacing = 1.sp
+    )
+    
+    val timestamp = TextStyle(
+        fontFamily = FontFamily.Monospace,
+        fontWeight = FontWeight.Normal,
+        fontSize = 12.sp
+    )
+}
+
 // Material 3 Default Typography
 val Typography = Typography(
+// ... existing typography ...
     displayLarge = TextStyle(
         fontFamily = PlayfairDisplayFamily,
         fontWeight = FontWeight.Bold,
