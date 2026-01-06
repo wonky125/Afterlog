@@ -21,8 +21,7 @@ import javax.inject.Singleton
 
 @Singleton
 class TtsRepository @Inject constructor(
-    @ApplicationContext private val context: Context,
-    private val geminiRepository: GeminiRepository
+    @ApplicationContext private val context: Context
 ) {
     // Construct URL dynamically to ensure we use the latest BuildConfig value
     private fun getUrl(): String {

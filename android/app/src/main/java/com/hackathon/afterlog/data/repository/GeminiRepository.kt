@@ -52,7 +52,7 @@ class GeminiRepository @Inject constructor(
         try {
             Log.d("GeminiRepo", "Starting Noir Analysis for ${videoFiles.size} files")
             
-            val frames = extractKeyFrames(videoFiles, maxFrames = 12)
+            val frames = extractKeyFrames(videoFiles, intervalSec = 15)
             Log.d("GeminiRepo", "Extracted ${frames.size} frames")
             
             val audioData = audioFile?.let { uploadAudioToGemini(it) }
@@ -131,7 +131,10 @@ class GeminiRepository @Inject constructor(
 
         } catch (e: Exception) {
             Log.e("GeminiRepo", "Investigation failed", e)
-            return@withContext """{"headline":"SYSTEM ERROR","summary":"${e.localizedMessage}","atmosphere":"","timeline":[],"verdict":"Investigation aborted."}"""
+            // Return detailed error for debugging
+            val errorType = e.javaClass.simpleName
+            val errorMessage = e.message?.replace("\"", "'") ?: "Unknown error"
+            return@withContext """{"headline":"SYSTEM ERROR ($errorType)","summary":"$errorMessage","atmosphere":"","timeline":[],"verdict":"Investigation aborted."}"""
         }
     }
 
@@ -149,12 +152,23 @@ class GeminiRepository @Inject constructor(
             "ogg" -> "audio/ogg"
             "flac" -> "audio/flac"
             "pcm" -> {
-                // Convert PCM to WAV before upload to ensure correct headers/format for Gemini
+                // Convert PCM to WAV before upload
                 val wavFile = convertPcmToWav(audioFile)
                 if (wavFile != null) {
-                    return uploadAudioToGemini(wavFile)
+                    val wavMimeType = "audio/wav"
+                    Log.d("GeminiRepo", "Uploading converted audio: ${wavFile.name} ($wavMimeType)")
+                    val uri = filesApiClient.uploadFile(wavFile, wavMimeType)
+                    return if (uri != null) {
+                        Log.d("GeminiRepo", "Audio upload SUCCESS. URI: $uri")
+                        Pair(uri, wavMimeType)
+                    } else {
+                        Log.e("GeminiRepo", "Audio upload FAILED. URI is null.")
+                        null
+                    }
+                } else {
+                    Log.e("GeminiRepo", "PCM conversion failed, skipping upload.")
+                    return null
                 }
-                "audio/L16" 
             }
             else -> {
                 Log.w("GeminiRepo", "Unsupported audio format: ${audioFile.extension}")
@@ -163,48 +177,60 @@ class GeminiRepository @Inject constructor(
         }
         
         Log.d("GeminiRepo", "Uploading converted audio to Gemini: ${audioFile.name} ($mimeType)")
-        val uri = filesApiClient.uploadFile(audioFile, mimeType)
+        val uri = filesApiClient.uploadFile(audioFile, mimeType) ?: return null
         
-        return if (uri != null) {
-            Log.d("GeminiRepo", "Audio upload SUCCESS. URI: $uri")
-            Pair(uri, mimeType)
-        } else {
-            Log.e("GeminiRepo", "Audio upload FAILED. URI is null.")
-            null
-        }
+        Log.d("GeminiRepo", "Audio upload SUCCESS. URI: $uri")
+        return Pair(uri, mimeType)
+
     }
 
-    private fun extractKeyFrames(videoFiles: List<File>, maxFrames: Int): List<Bitmap> {
+    private fun extractKeyFrames(videoFiles: List<File>, intervalSec: Int = 15): List<Bitmap> {
         val bitmaps = mutableListOf<Bitmap>()
-        val retriever = MediaMetadataRetriever()
         
         try {
-            val targetFile = videoFiles.lastOrNull() 
-            if (targetFile == null) {
-                return emptyList()
-            }
-            
-            retriever.setDataSource(targetFile.absolutePath)
-            
-            val durationStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
-            val durationMs = durationStr?.toLongOrNull() ?: 0L
-            
-            if (durationMs > 0) {
-                val interval = durationMs / (maxFrames + 1)
-                for (i in 1..maxFrames) {
-                    val timeUs = (interval * i) * 1000
-                    val bitmap = retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
-                    if (bitmap != null) {
-                         bitmaps.add(bitmap)
+        // Process all video files to cover the full session
+            for (videoFile in videoFiles) {
+                if (!videoFile.exists()) continue
+                
+                val retriever = MediaMetadataRetriever()
+                try {
+                    retriever.setDataSource(videoFile.absolutePath)
+                    val durationStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+                    val durationMs = durationStr?.toLongOrNull() ?: 0L
+                    
+                    if (durationMs > 0) {
+                        // Extract 1 frame every intervalSec, but CAP at MAX_FRAMES_PER_VIDEO (e.g. 50)
+                        val totalPossibleFrames = (durationMs / (intervalSec * 1000)).toInt()
+                        val frameCount = minOf(totalPossibleFrames, 50)
+                        
+                        // Use until to avoid overshooting duration
+                        for (i in 0 until frameCount) {
+                            val timeUs = i * intervalSec * 1000000L
+                            
+                            // Retrieve and scale down to reduce token usage/memory (e.g., 512x512 max)
+                            val bitmap = retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                            
+                            if (bitmap != null) {
+                                // Simple resizing to save bandwidth/tokens (Gemini checks usually roughly 512px)
+                                val scaledForGemini = Bitmap.createScaledBitmap(bitmap, 512, 512, true) 
+                                if (bitmap != scaledForGemini) {
+                                    bitmap.recycle()
+                                }
+                                bitmaps.add(scaledForGemini)
+                            }
+                        }
                     }
+                } catch (e: Exception) {
+                    Log.e("GeminiRepo", "Error extracting from ${videoFile.name}", e)
+                } finally {
+                    try { retriever.release() } catch (e: Exception) {}
                 }
             }
         } catch (e: Exception) {
             Log.e("GeminiRepo", "Frame extraction failed", e)
-        } finally {
-            retriever.release()
         }
         
+        Log.d("GeminiRepo", "Extracted total ${bitmaps.size} frames for analysis")
         return bitmaps
     }
 
@@ -222,7 +248,7 @@ class GeminiRepository @Inject constructor(
             
             val header = ByteArray(44)
             val totalDataLen = pcmData.size.toLong() + 36
-            val bitrate = sampleRate * channels * 16
+
             
             header[0] = 'R'.code.toByte() 
             header[1] = 'I'.code.toByte()
@@ -265,7 +291,7 @@ class GeminiRepository @Inject constructor(
             header[30] = ((byteRate shr 16) and 0xff).toByte()
             header[31] = ((byteRate shr 24) and 0xff).toByte()
             
-            header[32] = (channels * 16 / 8).toByte() // block align (Should be 2 for Mono 16-bit)
+            header[32] = 2.toByte() // block align (Mono 16-bit = 2 bytes per sample)
             header[33] = 0
             
             header[34] = 16 // bits per sample

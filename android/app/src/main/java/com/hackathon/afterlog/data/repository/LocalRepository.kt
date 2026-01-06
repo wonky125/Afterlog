@@ -75,4 +75,26 @@ class LocalRepository @Inject constructor(
         
         return logDao.getLogsBySessionSuspend(targetId)
     }
+    
+    // Media Pipeline Helpers
+    
+    /**
+     * Gets all video files for a session.
+     * Returns both VIDEO_CHUNK and VIDEO_HIGHLIGHT types.
+     */
+    suspend fun getVideosBySession(sessionId: String): List<MediaLogEntity> {
+        val allLogs = getSessionLogs(sessionId)
+        return allLogs.filter { 
+            it.type == MediaType.VIDEO_CHUNK || it.type == MediaType.VIDEO_HIGHLIGHT 
+        }
+    }
+    
+    /**
+     * Gets the audio file for a session.
+     * Returns the first AUDIO_CHUNK entry found.
+     */
+    suspend fun getAudioFileBySession(sessionId: String): MediaLogEntity? {
+        val allLogs = getSessionLogs(sessionId)
+        return allLogs.firstOrNull { it.type == MediaType.AUDIO_CHUNK }
+    }
 }

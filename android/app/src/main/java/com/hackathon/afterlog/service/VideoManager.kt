@@ -180,7 +180,7 @@ class VideoManager @Inject constructor(
 
     /**
      * Triggered by AudioMonitor (Scream Event).
-     * Moves all current buffer files to permanent storage.
+     * Moves all current buffer files to permanent storage as VIDEO_HIGHLIGHT.
      */
     fun saveBufferForEvent(sessionId: String) {
         Log.i("VideoManager", "Saving buffer for Scream Event!")
@@ -201,14 +201,15 @@ class VideoManager @Inject constructor(
                     try {
                         tempFile.copyTo(permFile, overwrite = true)
                         
-                        // Register to DB
+                        // Register to DB as VIDEO_HIGHLIGHT for stitching
                         repository.logMedia(
                             sessionId = sessionId,
-                            type = MediaType.VIDEO_CHUNK, 
+                            type = MediaType.VIDEO_HIGHLIGHT, 
                             filePath = permFile.absolutePath,
                             decibel = null,
                             timestamp = timestamp
                         )
+                        Log.d("VideoManager", "Saved VIDEO_HIGHLIGHT: ${permFile.name}")
                     } catch (e: Exception) {
                         Log.e("VideoManager", "Failed to save buffer file", e)
                     }
