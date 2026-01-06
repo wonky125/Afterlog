@@ -85,8 +85,17 @@ class VideoStitcher @Inject constructor(
             
             val composition = Composition.Builder(sequences).build()
             
-            // Execute transformation
-            val result = executeTransformation(composition, outputFile)
+            // Execute transformation with cleanup guarantee
+            val result = try {
+                executeTransformation(composition, outputFile)
+            } finally {
+                // Ensure cleanup even if transformation fails
+                try {
+                    sequences.clear()
+                } catch (e: Exception) {
+                    Log.w(TAG, "Cleanup warning", e)
+                }
+            }
             
             if (result.isSuccess && outputFile.exists()) {
                 Log.d(TAG, "✅ Stitch complete: ${outputFile.absolutePath} (${outputFile.length()} bytes)")

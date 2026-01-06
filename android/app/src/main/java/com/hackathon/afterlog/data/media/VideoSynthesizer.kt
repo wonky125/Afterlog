@@ -440,11 +440,18 @@ class VideoSynthesizer @Inject constructor(
         fun setPresentationTime(nsecs: Long) { EGLExt.eglPresentationTimeANDROID(eglDisplay, eglSurface, nsecs) }
         
         fun release() {
-            if (eglDisplay !== EGL14.EGL_NO_DISPLAY) {
-                EGL14.eglMakeCurrent(eglDisplay, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_CONTEXT)
-                EGL14.eglDestroySurface(eglDisplay, eglSurface)
-                EGL14.eglDestroyContext(eglDisplay, eglContext)
-                EGL14.eglTerminate(eglDisplay)
+            try {
+                if (eglDisplay !== EGL14.EGL_NO_DISPLAY) {
+                    EGL14.eglMakeCurrent(eglDisplay, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_CONTEXT)
+                    try { EGL14.eglDestroySurface(eglDisplay, eglSurface) } catch (e: Exception) { Log.w("InputSurface", "Surface cleanup failed", e) }
+                    try { EGL14.eglDestroyContext(eglDisplay, eglContext) } catch (e: Exception) { Log.w("InputSurface", "Context cleanup failed", e) }
+                    try { EGL14.eglTerminate(eglDisplay) } catch (e: Exception) { Log.w("InputSurface", "Display cleanup failed", e) }
+                }
+                eglDisplay = EGL14.EGL_NO_DISPLAY
+                eglContext = EGL14.EGL_NO_CONTEXT
+                eglSurface = EGL14.EGL_NO_SURFACE
+            } catch (e: Exception) {
+                Log.e("InputSurface", "Release failed", e)
             }
         }
     }
