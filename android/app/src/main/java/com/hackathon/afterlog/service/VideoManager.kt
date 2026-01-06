@@ -42,6 +42,10 @@ class VideoManager @Inject constructor(
     private val bufferCapacity = 6
     private val chunkDurationMillis = 30_000L
     private var currentScope: CoroutineScope? = null // Store for lifecycle-aware operations
+    
+    // Centered Highlight Logic
+    private var pendingHighlightCount = 0
+    private val highlightMutex = Mutex()
 
     // bindCamera REMOVED -> handled by CameraUseCaseManager
 
@@ -144,7 +148,9 @@ class VideoManager @Inject constructor(
                             if (!recordEvent.hasError()) {
                                 Log.d("VideoManager", "Finalized chunk: ${tempFile.name}")
                                 // Add to buffer ONLY when file is complete and safe (MP4 header written)
-                                currentScope?.launch { addToBuffer(tempFile) } 
+                                currentScope?.launch { 
+                                    handleNewChunk(tempFile) 
+                                } 
                             } else {
                                 // If error, file might be partial.
                                 Log.e("VideoManager", "Video capture error: ${recordEvent.error}")
@@ -166,6 +172,26 @@ class VideoManager @Inject constructor(
         activeRecording = null
     }
 
+    private suspend fun handleNewChunk(file: File) {
+        val sessionId = currentSessionId ?: return
+        
+        // Check if this chunk is part of a "future" highlight window
+        val isPending = highlightMutex.withLock {
+            if (pendingHighlightCount > 0) {
+                pendingHighlightCount--
+                true
+            } else {
+                false
+            }
+        }
+
+        if (isPending) {
+            saveAsHighlight(sessionId, file)
+        }
+
+        addToBuffer(file)
+    }
+
     private suspend fun addToBuffer(file: File) {
         bufferMutex.withLock {
             tempBuffer.addLast(file)
@@ -178,42 +204,54 @@ class VideoManager @Inject constructor(
         }
     }
 
+    private fun saveAsHighlight(sessionId: String, file: File) {
+        currentScope?.launch(Dispatchers.IO) {
+            if (!file.exists()) return@launch
+            
+            val timestamp = timeManager.getCurrentTime()
+            val permFile = fileManager.getHighlightVideoFile(sessionId, file.name)
+            
+            try {
+                file.copyTo(permFile, overwrite = true)
+                
+                // Register to DB as VIDEO_HIGHLIGHT for stitching
+                repository.logMedia(
+                    sessionId = sessionId,
+                    type = MediaType.VIDEO_HIGHLIGHT, 
+                    filePath = permFile.absolutePath,
+                    decibel = null,
+                    timestamp = timestamp
+                )
+                Log.d("VideoManager", "✅ Saved VIDEO_HIGHLIGHT: ${permFile.name}")
+            } catch (e: Exception) {
+                Log.e("VideoManager", "Failed to copy highlight file", e)
+            }
+        }
+    }
+
     /**
      * Triggered by AudioMonitor (Scream Event).
-     * Moves all current buffer files to permanent storage as VIDEO_HIGHLIGHT.
+     * Saves the last 1.5m (3 chunks) as highlights AND sets flags to capture the next 1.5m.
      */
     fun saveBufferForEvent(sessionId: String) {
-        Log.i("VideoManager", "Saving buffer for Scream Event!")
+        Log.i("VideoManager", "🎬 Triggering Centered Highlight (1.5m pre / 1.5m post)")
         
-        // Copy logic (Snapshot of current buffer)
-        // PROTECT WITH MUTEX to prevent ConcurrentModificationException
-        // We launch a coroutine to do the copy I/O work
+        // 1. Capture past 1.5 minutes (Pre-event context)
         currentScope?.launch(Dispatchers.IO) {
             val snapshot = bufferMutex.withLock { 
-                 tempBuffer.toList() 
+                 // Take the last 3 chunks from the 6-chunk buffer (most recent 90s)
+                 tempBuffer.toList().takeLast(3)
             }
             
-            snapshot.forEach { tempFile ->
-                if (tempFile.exists()) {
-                    val timestamp = timeManager.getCurrentTime()
-                    val permFile = fileManager.getHighlightVideoFile(sessionId, tempFile.name)
-                    
-                    try {
-                        tempFile.copyTo(permFile, overwrite = true)
-                        
-                        // Register to DB as VIDEO_HIGHLIGHT for stitching
-                        repository.logMedia(
-                            sessionId = sessionId,
-                            type = MediaType.VIDEO_HIGHLIGHT, 
-                            filePath = permFile.absolutePath,
-                            decibel = null,
-                            timestamp = timestamp
-                        )
-                        Log.d("VideoManager", "Saved VIDEO_HIGHLIGHT: ${permFile.name}")
-                    } catch (e: Exception) {
-                        Log.e("VideoManager", "Failed to save buffer file", e)
-                    }
-                }
+            snapshot.forEach { file ->
+                saveAsHighlight(sessionId, file)
+            }
+        }
+
+        // 2. Schedule capture of next 1.5 minutes (Post-event reaction)
+        currentScope?.launch {
+            highlightMutex.withLock {
+                pendingHighlightCount = 3 // Next 3 chunks (90s) will be saved
             }
         }
     }

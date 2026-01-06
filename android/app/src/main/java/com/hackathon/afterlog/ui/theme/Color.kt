@@ -2,26 +2,36 @@ package com.hackathon.afterlog.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-// Original Palette
+// 1920s Lovecraftian Noir Palette (Target)
+object NoirColors {
+    val BloodRed = Color(0xFF8B0000)
+    val BloodRedHover = Color(0xFFA00000) // Lighter for hover
+    val DeepBlack = Color(0xFF0A0A0A)
+    val CardStart = Color(0xFF1A1A1A)
+    val CardEnd = Color(0xFF0F0F0F)
+    val Border = Color(0xFF2A2A2A)
+    val TextHeading = Color(0xFFFFFFFF)
+    val TextBody = Color(0xFF999999)
+    val TextSecondary = Color(0xFF666666)
+}
+
+// Legacy Palettes (To be removed after refactoring)
 val Purple80 = Color(0xFFD0BCFF)
 val PurpleGrey80 = Color(0xFFCCC2DC)
 val Pink80 = Color(0xFFEFB8C8)
-
 val Purple40 = Color(0xFF6650a4)
 val PurpleGrey40 = Color(0xFF625b71)
 val Pink40 = Color(0xFF7D5260)
 
-// Afterlog Noir Palette
-val BloodRed = Color(0xFF8B0000)
-val DeepBlack = Color(0xFF0a0a0a)
-val CharcoalGrey = Color(0xFF1a1a1a)
-val BorderGrey = Color(0xFF2a2a2a)
-val TextGray = Color(0xFF999999)
+// Direct reference aliases for backward compatibility during migration
+val BloodRed = NoirColors.BloodRed
+val DeepBlack = NoirColors.DeepBlack
+val CharcoalGrey = NoirColors.CardStart
+val BorderGrey = NoirColors.Border
+val TextGray = NoirColors.TextBody
 
-// 1920s Newspaper Palette
-// 1920s Newspaper Palette (Legacy/Pivot)
+// 1920s Newspaper Palette (Keeping for Newspaper view)
 object NewspaperColors {
-    // ... existing colors ...
     val Parchment = Color(0xFFF5E6D3)
     val FreshPaper = Color(0xFFFAF7F2)
     val AgedPaper = Color(0xFFEDE4D4)
@@ -40,18 +50,18 @@ object NewspaperColors {
     val ErrorRed = Color(0xFF8B0000)
 }
 
-// Space Horror Terminal Palette
+// Space Horror Terminal Palette (DEPRECATED - REMOVE after refactor)
 object SpaceTerminalColors {
-    val Background = Color(0xFF050505)   // Near absolute black
-    val Surface = Color(0xFF0D1117)      // Dark slate surface
+    val Background = Color(0xFF050505)
+    val Surface = Color(0xFF0D1117)
     
-    val PrimaryGreen = Color(0xFF39FF14) // Classic terminal green
-    val SecondaryCyan = Color(0xFF00F3FF) // System cyan
-    val WarningRed = Color(0xFFFF3131)   // Hazard red
-    val AlertOrange = Color(0xFFFF9D00)  // Caution orange
+    val PrimaryGreen = Color(0xFF39FF14)
+    val SecondaryCyan = Color(0xFF00F3FF)
+    val WarningRed = Color(0xFFFF3131)
+    val AlertOrange = Color(0xFFFF9D00)
     
-    val TextMain = Color(0xFFD1D5DB)     // Light gray for body
-    val TextDim = Color(0xFF6B7280)      // Muted gray
+    val TextMain = Color(0xFFD1D5DB)
+    val TextDim = Color(0xFF6B7280)
     
     val ScanlineColor = Color(0xFF000000).copy(alpha = 0.3f)
     val GlowGreen = Color(0xFF39FF14).copy(alpha = 0.15f)

@@ -10,18 +10,18 @@ object MockReportData {
     // Based on "Aegis-7 Station Incident"
     // ------------------------------------------------------------------------
     val realDataSimulation = GeminiReport(
-        headline = "CRITICAL BREACH: STATION AEGIS-7 COMMUNICATIONS OFFLINE",
-        summary = "Security logs recovered from the central mainframe indicate a total containment failure in Sector 4. Unknown biological entities detected.",
-        atmosphere = "Cold, mechanical, echoing with the sound of failing life support systems. The scent of ozone and copper hangs in the recirculated air.",
-        article = "EVENT LOG [RECOVERED]: At 0400 hours, Station Aegis-7 experienced a massive power surge originating from the bio-labs. Initial reports from Security Officer Vance described 'unidentified lifeforms' emerging from the ventilation shafts. By 0415, Sectors 1 through 3 were placed under automated quarantine. \n\nSurvival chances for the remaining crew are estimated at 0.04%. The main AI core has initiated the 'Scorched Earth' protocol, but manual override is required at the primary bridge. Any survivors must avoid all darkened corridors and prioritize oxygen preservation.",
-        verdict = "STATION LOSS IMMINENT. NO SURVIVORS DETECTED.",
+        headline = "TRAGEDY AT THE ARKHAM SANITARIUM: UNSPEAKABLE HORRORS REVEALED",
+        summary = "A local journalist uncovers the macabre truth behind the strange lights and rhythmic chanting echoing from the archives.",
+        atmosphere = "Thick, damp fog clings to the cold stone walls. The air is heavy with the scent of old paper and something... ancient. A low, rhythmic thumping vibrates through the floorboards.",
+        article = "ARKHAM, OCTOBER 1923 — What began as a routine investigation into missing hospital records has spiraled into a nightmare beyond human comprehension. Last night, local authorities were called to the Miskatonic Sanitarium after neighbors reported 'agonizing screams' and a pulsating violet glow emanating from the basement archives. \n\nUpon entering the scene, it was clear that no normal medical practice had occurred. The walls were scrawled with symbols that defy any known alphabet, and the air pulsed with a vibration that seemed to curdle the very blood in one's veins. Detective Murphy, the first on the scene, remains in a state of catatonic shock. Whatever took place in those depths has left a permanent scar on our fair city. The archives remain sealed until further notice.",
+        verdict = "A MALIGNANT PRESENCE REMAINS. THE TRUTH IS BURIED DEEP.",
         imagePath = "android.resource://com.hackathon.afterlog/drawable/sample_evidence",
         timeline = listOf(
-            TimelineEvent("04:00:12", "System AI", "Power Failure", "Substation 4 power grid offline. Backup generators at 40%."),
-            TimelineEvent("04:05:30", "Officer Vance", "Hull Breach", "Movement detected in the maintenance shafts. Sending security team."),
-            TimelineEvent("04:12:45", "Unknown", "Acoustic Spike", "High-frequency screeching recorded near the mess hall. Decibel peak detected.", 95),
-            TimelineEvent("04:20:01", "System AI", "Life Support Warning", "Oxygen levels dropping in Sector 2. Containment seals failing."),
-            TimelineEvent("04:35:10", "Survivor Lane", "Final Transmission", "They're in the vents. Don't open the airlock.")
+            TimelineEvent("00:12", "The Journalist", "Entry into Sanitarium", "The front door creaked open. The archive basement beckoned."),
+            TimelineEvent("00:45", "The Orderly", "Nervous Whispers", "Claims he heard 'the singing' from the walls again. Eyes were bloodshot."),
+            TimelineEvent("01:30", "Unknown", "Acoustic Spike", "A high-pitched, inhuman shriek echoed through the main hall.", 98),
+            TimelineEvent("02:15", "The Detective", "Discovery of Symbols", "Glowing ink found on the floor. It smells like sea salt and rot."),
+            TimelineEvent("03:00", "The Witness", "Final Sighting", "It wasn't a man. It had too many... angles.")
         )
     )
 

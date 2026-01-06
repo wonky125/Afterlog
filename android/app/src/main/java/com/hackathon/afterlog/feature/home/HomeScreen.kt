@@ -16,15 +16,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
-import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.hackathon.afterlog.service.AfterLogService
-import com.hackathon.afterlog.ui.components.TerminalSurface
-import com.hackathon.afterlog.ui.theme.SpaceTerminalColors
-import com.hackathon.afterlog.ui.theme.SpaceTerminalTypography
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.border
-import androidx.compose.ui.unit.sp
+import com.hackathon.afterlog.ui.components.*
+import com.hackathon.afterlog.ui.theme.NoirColors
+import com.hackathon.afterlog.ui.theme.NoirTypography
+import com.hackathon.afterlog.ui.theme.PlayfairDisplayFamily
 
 @Composable
 fun HomeScreen(
@@ -40,135 +40,152 @@ fun HomeScreen(
         hasPermissions = permissions.values.all { it }
     }
 
-    // Gemini Test State
     val testResult by viewModel.testResult.collectAsState()
     val isTesting by viewModel.isTesting.collectAsState()
 
-    TerminalSurface {
+    NoirSurface {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
+                .padding(24.dp)
         ) {
-            // Header Section
-            Text(
-                text = "AEGIS-7 TERMINAL",
-                style = SpaceTerminalTypography.logTitle.copy(fontSize = 28.sp),
-                color = SpaceTerminalColors.PrimaryGreen
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = "SECURE_CONN_ESTABLISHED",
-                style = SpaceTerminalTypography.systemStatus,
-                color = SpaceTerminalColors.SecondaryCyan
-            )
-
-            Spacer(modifier = Modifier.height(48.dp))
+            // Header
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(bottom = 32.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text(
+                        text = "AFTERLOG",
+                        style = TextStyle(
+                            fontFamily = PlayfairDisplayFamily,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 32.sp,
+                            letterSpacing = 6.sp,
+                            color = NoirColors.BloodRed
+                        )
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "INVESTIGATIVE ARCHIVE SYSTEM",
+                        style = TextStyle(
+                            fontSize = 10.sp,
+                            letterSpacing = 2.sp,
+                            color = NoirColors.TextSecondary
+                        )
+                    )
+                }
+                NoirIconButton(onClick = { /* TODO: Settings */ }) {
+                     Text("⚙️", fontSize = 16.sp)
+                }
+            }
 
             if (!hasPermissions) {
-                TerminalButton(
-                    text = "GRANT_ACCESS_PERMISSIONS",
-                    isWarning = true,
-                    onClick = {
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                            permissionLauncher.launch(
-                                arrayOf(
-                                    Manifest.permission.CAMERA,
-                                    Manifest.permission.RECORD_AUDIO,
-                                    Manifest.permission.POST_NOTIFICATIONS
-                                )
-                            )
-                        } else {
-                            permissionLauncher.launch(
-                                arrayOf(
-                                    Manifest.permission.CAMERA,
-                                    Manifest.permission.RECORD_AUDIO
-                                )
-                            )
+                NoirCard(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = "PERMISSION REQUIRED",
+                        style = NoirTypography.h2,
+                        color = NoirColors.BloodRed
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "The archive system requires access to local sensors to monitor anomalies.",
+                        style = NoirTypography.body,
+                        color = NoirColors.TextBody
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    NoirButton(
+                        text = "GRANT ACCESS",
+                        onClick = {
+                            val permissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO, Manifest.permission.POST_NOTIFICATIONS)
+                            } else {
+                                arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO)
+                            }
+                            permissionLauncher.launch(permissions)
                         }
-                    }
-                )
+                    )
+                }
             } else {
-                // Service Control Section
-                TerminalSectionHeader("BACKGROUND_PROCESS_DAEMON")
+                // Main Controls
+                NoirSectionHeader("MONITORING PROTOCOLS")
                 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    Box(modifier = Modifier.weight(1f)) {
-                         TerminalButton(
-                            text = "INIT_SERVICE",
-                            onClick = {
-                                val intent = Intent(context, AfterLogService::class.java)
-                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                                    context.startForegroundService(intent)
-                                } else {
-                                    context.startService(intent)
-                                }
-                                Toast.makeText(context, "Protocol Initiated", Toast.LENGTH_SHORT).show()
+                    NoirButton(
+                        text = "START ARCHIVE",
+                        onClick = {
+                            val intent = Intent(context, AfterLogService::class.java)
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                context.startForegroundService(intent)
+                            } else {
+                                context.startService(intent)
                             }
-                        )
-                    }
-                    Box(modifier = Modifier.weight(1f)) {
-                        TerminalButton(
-                            text = "KILL_PROCESS",
-                            isWarning = true,
-                            onClick = {
-                                val intent = Intent(context, AfterLogService::class.java)
-                                context.stopService(intent)
-                                Toast.makeText(context, "Protocol Terminated", Toast.LENGTH_SHORT).show()
-                            }
-                        )
-                    }
+                            Toast.makeText(context, "Archive Started", Toast.LENGTH_SHORT).show()
+                        },
+                        modifier = Modifier.weight(1f)
+                    )
+                    NoirButton(
+                        text = "STOP ARCHIVE",
+                        onClick = {
+                            val intent = Intent(context, AfterLogService::class.java)
+                            context.stopService(intent)
+                            Toast.makeText(context, "Archive Stopped", Toast.LENGTH_SHORT).show()
+                        },
+                        modifier = Modifier.weight(1f)
+                    )
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
                 
-                TerminalButton(
-                    text = "DEBUG: SIMULATE_BIO_THREAT (SCREAM)",
+                NoirButton(
+                    text = "SIMULATE ANOMALY",
                     onClick = {
                        val intent = Intent(context, AfterLogService::class.java).apply {
                             action = AfterLogService.ACTION_SIMULATE_SCREAM
                         }
                         context.startService(intent)
-                    }
+                    },
+                    modifier = Modifier.fillMaxWidth()
                 )
 
                 Spacer(modifier = Modifier.height(32.dp))
 
-                // Gemini Analysis Section
-                TerminalSectionHeader("MOTH_ER AI CORE")
+                NoirSectionHeader("CASE ARCHIVES")
 
-                TerminalButton(
-                    text = "ACCESS_BLACK_BOX_LOGS",
-                    onClick = onNavigateToReport
+                NoirButton(
+                    text = "OPEN LATEST CASE",
+                    onClick = { onNavigateToReport("last_session") },
+                    modifier = Modifier.fillMaxWidth()
                 )
                 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                TerminalButton(
-                    text = if (isTesting) "PINGING_SATELLITE..." else "TEST_UPLINK_CONNECTION",
+                NoirButton(
+                    text = if (isTesting) "CONNECTING..." else "TEST GEMINI UPLINK",
                     onClick = { viewModel.testGeminiConnection() },
-                    isEnabled = !isTesting
+                    enabled = !isTesting,
+                    modifier = Modifier.fillMaxWidth()
                 )
 
                 // Test Result Display
                 testResult?.let { result ->
                     if (result.isNotEmpty()) {
                         Spacer(modifier = Modifier.height(16.dp))
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .border(1.dp, if (result.contains("Success")) SpaceTerminalColors.PrimaryGreen else SpaceTerminalColors.WarningRed)
-                                .padding(12.dp)
-                        ) {
+                        NoirCard(modifier = Modifier.fillMaxWidth()) {
                             Text(
-                                text = ">> RESPONSE: $result",
-                                style = SpaceTerminalTypography.systemStatus,
-                                color = if (result.contains("Success")) SpaceTerminalColors.PrimaryGreen else SpaceTerminalColors.WarningRed
+                                text = "SYSTEM RESPONSE",
+                                style = NoirTypography.subtitle,
+                                color = NoirColors.TextSecondary
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = result,
+                                style = NoirTypography.body,
+                                color = if (result.contains("Success")) NoirColors.BloodRed else NoirColors.TextBody
                             )
                         }
                     }
@@ -177,65 +194,22 @@ fun HomeScreen(
             
             Spacer(modifier = Modifier.weight(1f))
             Text(
-                text = "V1.2.0 // UNAUTHORIZED PERSONNEL WILL BE TERMINATED",
-                style = SpaceTerminalTypography.timestamp,
-                color = SpaceTerminalColors.TextDim,
-                modifier = Modifier.padding(bottom = 16.dp)
+                text = "CASE FILE #1923 // MISKATONIC ARCHIVE SYSTEM",
+                style = TextStyle(fontSize = 10.sp, letterSpacing = 1.sp, color = NoirColors.TextSecondary),
+                modifier = Modifier.align(Alignment.CenterHorizontally).padding(bottom = 16.dp)
             )
         }
-    }
-}
-
-@Composable
-fun TerminalSectionHeader(title: String) {
-    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp)) {
-        Text(
-            text = ":: $title ::",
-            style = SpaceTerminalTypography.systemStatus,
-            color = SpaceTerminalColors.TextDim
-        )
-        HorizontalDivider(color = SpaceTerminalColors.TextDim.copy(alpha = 0.3f))
-        Spacer(modifier = Modifier.height(12.dp))
-    }
-}
-
-@Composable
-fun TerminalButton(
-    text: String,
-    onClick: () -> Unit,
-    isWarning: Boolean = false,
-    isEnabled: Boolean = true
-) {
-    val mainColor = if (isWarning) SpaceTerminalColors.WarningRed else SpaceTerminalColors.PrimaryGreen
-    
-    androidx.compose.material3.OutlinedButton(
-        onClick = onClick,
-        enabled = isEnabled,
-        modifier = Modifier.fillMaxWidth().height(50.dp),
-        colors = ButtonDefaults.outlinedButtonColors(
-            contentColor = mainColor,
-            disabledContentColor = SpaceTerminalColors.TextDim
-        ),
-        border = BorderStroke(1.dp, if (isEnabled) mainColor else SpaceTerminalColors.TextDim),
-        shape = androidx.compose.ui.graphics.RectangleShape // Retro sharp corners
-    ) {
-        Text(
-             text = text,
-             style = SpaceTerminalTypography.systemStatus
-        )
     }
 }
 
 private fun checkPermissions(context: Context): Boolean {
     val camera = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA)
     val audio = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO)
-    
     val notifications = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
         ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS)
     } else {
         PackageManager.PERMISSION_GRANTED
     }
-
     return camera == PackageManager.PERMISSION_GRANTED && 
            audio == PackageManager.PERMISSION_GRANTED &&
            notifications == PackageManager.PERMISSION_GRANTED
