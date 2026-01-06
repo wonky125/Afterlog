@@ -22,6 +22,36 @@ val SpecialEliteFamily = FontFamily(
     Font(R.font.special_elite, FontWeight.Normal)
 )
 
+// 1920s Noir Typography (Target)
+object NoirTypography {
+    val h1 = TextStyle(
+        fontFamily = PlayfairDisplayFamily,
+        fontWeight = FontWeight.Bold,
+        fontSize = 32.sp,
+        letterSpacing = 2.sp,
+    )
+    
+    val h2 = TextStyle(
+        fontFamily = PlayfairDisplayFamily,
+        fontWeight = FontWeight.Bold,
+        fontSize = 24.sp,
+        letterSpacing = 1.sp,
+    )
+    
+    val subtitle = TextStyle(
+        fontFamily = LoraFamily,
+        fontWeight = FontWeight.Bold,
+        fontSize = 18.sp,
+        letterSpacing = 0.5.sp
+    )
+    
+    val body = TextStyle(
+        fontFamily = LoraFamily,
+        fontWeight = FontWeight.Normal,
+        fontSize = 16.sp,
+    )
+}
+
 // Newspaper-specific Typography Styles
 object NewspaperTypography {
     // Masthead - "THE AFTERLOG"
@@ -82,7 +112,7 @@ object NewspaperTypography {
     )
 }
 
-// Space Horror Terminal Typography
+// Space Horror Terminal Typography (DEPRECATED)
 object SpaceTerminalTypography {
     val logTitle = TextStyle(
         fontFamily = FontFamily.Monospace,

@@ -40,24 +40,17 @@ private val LightColorScheme = darkColorScheme( // Force Dark even in Light mode
 )
 
 @Composable
-fun AfterLogTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
-    dynamicColor: Boolean = false, // Disable dynamic color to enforce brand
+fun NoirTheme(
+    darkTheme: Boolean = true, // Always dark for Noir
     content: @Composable () -> Unit
 ) {
-    val colorScheme = when {
-        // dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
-        //     val context = LocalContext.current
-        //     if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-        // }
-        darkTheme -> DarkColorScheme
-        else -> LightColorScheme
-    }
+    val colorScheme = DarkColorScheme
+    
     val view = LocalView.current
     if (!view.isInEditMode) {
         SideEffect {
             val window = (view.context as Activity).window
-            window.statusBarColor = DeepBlack.toArgb() // Status bar also black
+            window.statusBarColor = NoirColors.DeepBlack.toArgb()
             WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = false
         }
     }
@@ -67,4 +60,14 @@ fun AfterLogTheme(
         typography = Typography,
         content = content
     )
+}
+
+@Composable
+fun AfterLogTheme(
+    darkTheme: Boolean = isSystemInDarkTheme(),
+    dynamicColor: Boolean = false,
+    content: @Composable () -> Unit
+) {
+    // Redirect to NoirTheme for everything
+    NoirTheme(content = content)
 }

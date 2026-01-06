@@ -17,24 +17,25 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
-import com.hackathon.afterlog.ui.theme.SpaceTerminalColors
-import com.hackathon.afterlog.ui.theme.SpaceTerminalTypography
+import com.hackathon.afterlog.ui.theme.NoirColors
+import com.hackathon.afterlog.ui.theme.NewspaperTypography
 
 @Composable
 fun VisualFragment(
     imagePath: String?,
-    label: String = "SENS_RECORD_01",
+    label: String = "EVIDENCE",
     timestamp: String? = null,
     modifier: Modifier = Modifier
 ) {
     if (imagePath == null) return
 
-    val cctvMatrix = remember {
+    // Sepia Matrix for 1920s look
+    val sepiaMatrix = remember {
         ColorMatrix(
             floatArrayOf(
-                0.3f, 0.3f, 0.3f, 0f, 0f,
-                0.3f, 0.3f, 0.3f, 0f, 0f,
-                0.3f, 0.3f, 0.3f, 0f, 0f,
+                0.393f, 0.769f, 0.189f, 0f, 0f,
+                0.349f, 0.686f, 0.168f, 0f, 0f,
+                0.272f, 0.534f, 0.131f, 0f, 0f,
                 0f, 0f, 0f, 1f, 0f
             )
         )
@@ -42,8 +43,8 @@ fun VisualFragment(
 
     Column(
         modifier = modifier
-            .border(1.dp, SpaceTerminalColors.PrimaryGreen.copy(alpha = 0.3f))
-            .padding(2.dp)
+            .background(Color.White) // Photo border
+            .padding(4.dp) // White border width
     ) {
         Box(
             modifier = Modifier
@@ -56,55 +57,37 @@ fun VisualFragment(
                     .data(imagePath)
                     .crossfade(true)
                     .build(),
-                contentDescription = "Visual Fragment",
+                contentDescription = "Evidence Photo",
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop,
-                colorFilter = ColorFilter.colorMatrix(cctvMatrix)
+                colorFilter = ColorFilter.colorMatrix(sepiaMatrix)
             )
             
-            // Overlay Labels
-            Column(
+            // "CONFIDENTIAL" stamp style label
+            Box(
                 modifier = Modifier
-                    .align(Alignment.TopStart)
+                    .align(Alignment.TopEnd)
                     .padding(8.dp)
+                    .border(2.dp, NoirColors.BloodRed.copy(alpha = 0.5f))
+                    .padding(4.dp)
             ) {
-                Text(
-                    text = "REC $label",
-                    style = SpaceTerminalTypography.systemStatus.copy(
-                        color = SpaceTerminalColors.PrimaryGreen,
-                        fontSize = 10.sp
+                 Text(
+                    text = label.uppercase(),
+                    style = NewspaperTypography.caption.copy(
+                        color = NoirColors.BloodRed.copy(alpha = 0.8f),
+                        fontSize = 10.sp,
+                        letterSpacing = 2.sp
                     )
                 )
-                if (timestamp != null) {
-                    Text(
-                        text = "T-OFS: $timestamp",
-                        style = SpaceTerminalTypography.systemStatus.copy(
-                            color = SpaceTerminalColors.PrimaryGreen,
-                            fontSize = 10.sp
-                        )
-                    )
-                }
             }
-            
-            // Camera corners effect (optional, simplified)
-            Box(Modifier.fillMaxSize().border(4.dp, SpaceTerminalColors.PrimaryGreen.copy(alpha = 0.1f)))
         }
         
-        // Metadata footer
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(SpaceTerminalColors.PrimaryGreen.copy(alpha = 0.05f))
-                .padding(4.dp),
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
+        if (timestamp != null) {
             Text(
-                text = "ENCRYPTED_STREAM_V3",
-                style = SpaceTerminalTypography.systemStatus.copy(fontSize = 8.sp, color = SpaceTerminalColors.TextDim)
-            )
-            Text(
-                text = "FRAME_SYNC: OK",
-                style = SpaceTerminalTypography.systemStatus.copy(fontSize = 8.sp, color = SpaceTerminalColors.PrimaryGreen)
+                text = "DATE: $timestamp",
+                style = NewspaperTypography.caption,
+                color = Color.Black,
+                modifier = Modifier.padding(top = 4.dp, start = 4.dp)
             )
         }
     }

@@ -5,7 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Divider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -15,65 +15,53 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.hackathon.afterlog.data.local.entities.MediaLogEntity
-import com.hackathon.afterlog.ui.theme.SpaceTerminalColors
-import com.hackathon.afterlog.ui.theme.SpaceTerminalTypography
+import com.hackathon.afterlog.ui.components.NoirSurface
+import com.hackathon.afterlog.ui.theme.NoirColors
+import com.hackathon.afterlog.ui.theme.NewspaperTypography
 import kotlinx.coroutines.delay
 
 @Composable
 fun CinematicLoadingView(count: Int) {
-    val startMessage = if (count > 0) "INITIALIZING DECRYPTION OF $count LOG_FRAGMENTS..." else "SCANNING FOR BLACK BOX SIGNAL..."
+    val startMessage = "SEARCHING ARCHIVES..."
     var loadingText by remember { mutableStateOf(startMessage) }
 
     LaunchedEffect(Unit) {
         val messages = listOf(
             startMessage,
-            "ESTABLISHING SECURE UPLINK...",
-            "BYPASSING STATION FIREWALL...",
-            "RECOVERING CORRUPTED DATA...",
-            "DECRYPTING VIDEO STREAM...",
-            "SCANNING FOR LIFEFORMS...",
-            "ANALYZING BIO-SIGNS...",
-            "FINALIZING INCIDENT REPORT..."
+            "CONSULTING WITNESSES...",
+            "REVIEWING EVIDENCE...",
+            "DEVELOPING PHOTOGRAPHS...",
+            "TYPING REPORT..."
         )
 
         var index = 0
         while (true) {
-            delay(1200)
+            delay(1500)
             index = (index + 1) % messages.size
             loadingText = messages[index]
         }
     }
 
-    Box(
-        modifier = Modifier.fillMaxSize().background(SpaceTerminalColors.Background),
-        contentAlignment = Alignment.Center
-    ) {
+    NoirSurface {
         Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier.padding(32.dp)
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
             LinearProgressIndicator(
-                color = SpaceTerminalColors.PrimaryGreen,
-                trackColor = SpaceTerminalColors.PrimaryGreen.copy(alpha = 0.1f),
-                modifier = Modifier.fillMaxWidth()
+                color = NoirColors.BloodRed,
+                trackColor = NoirColors.CardStart,
+                modifier = Modifier.width(200.dp)
             )
             
             Spacer(modifier = Modifier.height(32.dp))
 
             Text(
                 text = loadingText,
-                style = SpaceTerminalTypography.systemStatus,
+                style = NewspaperTypography.sectionHeader,
                 textAlign = TextAlign.Center,
-                color = SpaceTerminalColors.PrimaryGreen,
+                color = NoirColors.TextBody,
                 modifier = Modifier.animateContentSize()
-            )
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            Text(
-                text = ">> TERMINAL STATUS: BUSY",
-                style = SpaceTerminalTypography.timestamp,
-                color = SpaceTerminalColors.SecondaryCyan
             )
         }
     }
@@ -81,22 +69,24 @@ fun CinematicLoadingView(count: Int) {
 
 @Composable
 fun ErrorView(message: String) {
-    Box(
-        modifier = Modifier.fillMaxSize().background(SpaceTerminalColors.Background),
-        contentAlignment = Alignment.Center
-    ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+    NoirSurface {
+        Column(
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
             Text(
-                text = "CRITICAL_SYSTEM_FAILURE",
-                style = SpaceTerminalTypography.logTitle.copy(fontSize = 20.sp),
-                color = SpaceTerminalColors.WarningRed
+                text = "INVESTIGATION FAILED",
+                style = NewspaperTypography.headline,
+                color = NoirColors.BloodRed
             )
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(16.dp))
             Text(
-                text = "> ERROR: $message",
-                style = SpaceTerminalTypography.logBody,
-                color = SpaceTerminalColors.WarningRed,
-                textAlign = TextAlign.Center
+                text = message,
+                style = NewspaperTypography.body,
+                color = NoirColors.TextBody,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(horizontal = 32.dp)
             )
         }
     }
@@ -106,42 +96,43 @@ fun ErrorView(message: String) {
 fun SectionHeader(text: String, modifier: Modifier = Modifier) {
     Column(modifier = modifier) {
         Text(
-            text = ":: ${text.uppercase()} ::",
-            style = SpaceTerminalTypography.systemStatus,
-            color = SpaceTerminalColors.SecondaryCyan
+            text = text.uppercase(),
+            style = NewspaperTypography.sectionHeader,
+            color = NoirColors.BloodRed
         )
-        HorizontalDivider(color = SpaceTerminalColors.SecondaryCyan.copy(alpha = 0.3f))
+        Divider(color = NoirColors.BloodRed.copy(alpha = 0.5f))
     }
 }
 
 @Composable
 fun RawTextFallbackView(rawText: String, logs: List<MediaLogEntity>) {
-    LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(SpaceTerminalColors.Background)
-            .padding(16.dp)
-    ) {
-        item {
-            Text(
-                text = "SYSTEM_DUMP: RAW_DATA",
-                style = SpaceTerminalTypography.systemStatus,
-                color = SpaceTerminalColors.WarningRed
-            )
-            Spacer(modifier = Modifier.height(16.dp))
-            Text(
-                text = rawText,
-                style = SpaceTerminalTypography.logBody,
-                color = SpaceTerminalColors.TextMain
-            )
-        }
-        items(logs) { log ->
-            Text(
-                text = log.toString(),
-                style = SpaceTerminalTypography.timestamp,
-                color = SpaceTerminalColors.TextDim,
-                modifier = Modifier.padding(top = 4.dp)
-            )
+    NoirSurface {
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(24.dp)
+        ) {
+            item {
+                Text(
+                    text = "UNPROCESSED NOTES",
+                    style = NewspaperTypography.headline,
+                    color = NoirColors.TextHeading
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(
+                    text = rawText,
+                    style = NewspaperTypography.body,
+                    color = NoirColors.TextBody
+                )
+            }
+            items(logs) { log ->
+                Text(
+                    text = log.toString(),
+                    style = NewspaperTypography.timestamp,
+                    color = NoirColors.TextSecondary,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+            }
         }
     }
 }

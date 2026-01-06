@@ -9,7 +9,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.hackathon.afterlog.feature.report.components.CinematicLoadingView
 import com.hackathon.afterlog.feature.report.components.ErrorView
 import com.hackathon.afterlog.feature.report.components.RawTextFallbackView
-import com.hackathon.afterlog.feature.report.components.SpaceTerminalView
+import com.hackathon.afterlog.feature.report.components.InvestigationReportView
 import com.hackathon.afterlog.feature.report.debug.DebugConfig
 import com.hackathon.afterlog.feature.result.GameResultViewModel
 import com.hackathon.afterlog.feature.result.ResultUiState
@@ -73,8 +73,14 @@ fun ReportDetailScreen(
                         val isPlaying by viewModel.isPlaying.collectAsState()
                         val isTtsLoading by viewModel.isTtsLoading.collectAsState()
 
-                        SpaceTerminalView(
+                        // Find first highlight video
+                        val videoPath = state.logs
+                            .find { it.filePath.contains("highlight") && java.io.File(it.filePath).exists() }
+                            ?.filePath
+
+                        InvestigationReportView(
                             report = state.report,
+                            videoPath = videoPath,
                             isPlaying = isPlaying,
                             isTtsLoading = isTtsLoading,
                             onPlayClick = {

@@ -1,86 +1,48 @@
 package com.hackathon.afterlog.feature.report.components
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.hackathon.afterlog.ui.theme.SpaceTerminalColors
-import com.hackathon.afterlog.ui.theme.SpaceTerminalTypography
+import com.hackathon.afterlog.ui.components.NoirSurface
+import com.hackathon.afterlog.ui.theme.NoirColors
+import com.hackathon.afterlog.ui.theme.NewspaperTypography
 import kotlinx.coroutines.delay
 
 @Composable
 fun BootSequenceAnimation(
     onBootComplete: () -> Unit
 ) {
-    var bootLines by remember { mutableStateOf(listOf<String>()) }
+    var displayText by remember { mutableStateOf("") }
+    val fullText = "THE MISKATONIC ARCHIVES...\nACCESSING CASE FILE #1923..."
 
     LaunchedEffect(Unit) {
-        val sequence = listOf(
-            "BIOS_CHECK... OK",
-            "MEMORY_TEST... 64TB OK",
-            "LOADING_KERNEL... V9.3.1",
-            "CHECKING_PERIPHERALS...",
-            "> CAMERA_1: OFFLINE",
-            "> CAMERA_2: OFFLINE",
-            "> CAMERA_3: SIGNAL_WEAK",
-            "> BLACK_BOX: CONNECTED",
-            "INIT_CRYPTO_MODULE... DONE",
-            "ESTABLISHING_UPLINK...",
-            "ACCESS_GRANTED: USER_MOTH_ER"
-        )
-
-        sequence.forEachIndexed { index, line ->
-            delay(if (index < 3) 200 else 100) // Early lines play slower
-            bootLines = bootLines + line
+        fullText.forEach { char ->
+            delay(50L)
+            displayText += char
         }
-        delay(800)
+        delay(1000) // Hold for a second
         onBootComplete()
     }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(SpaceTerminalColors.Background)
-            .padding(32.dp)
-    ) {
-        Column(modifier = Modifier.align(Alignment.BottomStart)) {
-            bootLines.forEach { line ->
-                Text(
-                    text = line,
-                    style = SpaceTerminalTypography.systemStatus.copy(
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 14.sp
-                    ),
-                    color = SpaceTerminalColors.PrimaryGreen,
-                    modifier = Modifier.padding(vertical = 2.dp)
-                )
-            }
-            // Blinking cursor
-            BlinkingCursor()
+    NoirSurface {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = displayText,
+                style = NewspaperTypography.headline.copy(
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 20.sp
+                ),
+                color = NoirColors.BloodRed,
+                modifier = Modifier.padding(32.dp)
+            )
         }
-    }
-}
-
-@Composable
-fun BlinkingCursor() {
-    val showCursor by produceState(initialValue = true) {
-        while (true) {
-            delay(500)
-            value = !value
-        }
-    }
-    
-    if (showCursor) {
-        Text(
-            text = "_",
-            style = SpaceTerminalTypography.systemStatus,
-            color = SpaceTerminalColors.PrimaryGreen
-        )
     }
 }
