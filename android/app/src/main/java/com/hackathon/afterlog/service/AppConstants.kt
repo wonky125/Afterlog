@@ -2,7 +2,7 @@ package com.hackathon.afterlog.service
 
 object AppConstants {
     object Audio {
-        const val SCREAM_THRESHOLD_DB = 50.0
+        const val SCREAM_THRESHOLD_DB = 80.0
         const val SAMPLE_RATE = 16000 // 16kHz
         const val BUFFER_SIZE = 1024
         const val SCREAM_COOLDOWN_MS = 5000L

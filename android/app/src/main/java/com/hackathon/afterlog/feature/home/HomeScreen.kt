@@ -16,6 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.hackathon.afterlog.service.AfterLogService
 
@@ -143,21 +144,128 @@ fun HomeScreen(
             }
         }
         
+        // Video Synthesis Test Button
+        Spacer(modifier = Modifier.height(8.dp))
+        Button(
+            onClick = { viewModel.testVideoSynthesis() },
+            enabled = !isTesting,
+            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.tertiary)
+        ) {
+            if (isTesting && testResult?.contains("Testing Video") == true) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(24.dp),
+                    color = MaterialTheme.colorScheme.onTertiary
+                )
+            } else {
+                Text("🎬 Test Video Synthesis (Dummy)")
+            }
+        }
+        
+        Spacer(modifier = Modifier.height(8.dp))
+        HorizontalDivider()
+        Spacer(modifier = Modifier.height(8.dp))
+        
+        // Real Pipeline Button
+        Button(
+            onClick = { viewModel.generateReplay("last_session") },
+            enabled = !isTesting,
+            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+        ) {
+             if (isTesting && testResult?.contains("Analyzing Session") == true) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(24.dp),
+                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+            } else {
+                Text("🔍 Analyze Last Session (Full Pipeline)", color = MaterialTheme.colorScheme.onPrimaryContainer)
+            }
+        }
+        
         testResult?.let { result ->
             if (result.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = result,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = if (result.contains("Success")) 
-                        MaterialTheme.colorScheme.primary 
-                    else 
-                        MaterialTheme.colorScheme.error
-                )
+                
+                if (result.contains("✅") || result.contains("Success")) {
+                    Text(
+                        text = "Video Created Successfully!",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    
+                    val filePath = result.substringAfter("files/").trim()
+                    // Simple logic to extract path from log message if possible, 
+                    // or just use the ViewModel to hold the last path.
+                    // For now, let's assume ViewModel holds it or we parse it.
+                    // To keep it simple for this MVP step:
+                    
+                    var showVideoPlayer by remember { mutableStateOf(false) }
+                    
+                    Button(onClick = { showVideoPlayer = true }) {
+                        Text("▶️ Play Video")
+                    }
+                    
+                    if (showVideoPlayer) {
+                        val videoData = remember(result) {
+                            try {
+                                // Result format: "✅ Video created!\n/path/to/file.mp4"
+                                val path = result.substringAfterLast("\n").trim()
+                                val file = java.io.File(path)
+                                val uri = androidx.core.content.FileProvider.getUriForFile(
+                                    context,
+                                    "${context.packageName}.fileprovider",
+                                    file
+                                )
+                                Pair(uri, null)
+                            } catch (e: Exception) {
+                                Pair(null, e.localizedMessage)
+                            }
+                        }
+
+                        if (videoData.first != null) {
+                             VideoPlayerDialog(videoUri = videoData.first!!, onDismiss = { showVideoPlayer = false })
+                        } else {
+                             Text("Error loading video: ${videoData.second}", color = MaterialTheme.colorScheme.error)
+                        }
+                    }
+                } else {
+                    Text(
+                        text = result,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
             }
         }
     }
 }
+
+@Composable
+fun VideoPlayerDialog(videoUri: android.net.Uri, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Video Preview") },
+        text = {
+            AndroidView(
+                factory = { context ->
+                    android.widget.VideoView(context).apply {
+                        setVideoURI(videoUri)
+                        start()
+                        setOnCompletionListener { start() } // Loop
+                    }
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(300.dp)
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Close")
+            }
+        }
+    )
+}
+
 
 private fun checkPermissions(context: Context): Boolean {
     val camera = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA)

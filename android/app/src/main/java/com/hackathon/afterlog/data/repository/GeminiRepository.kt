@@ -52,7 +52,7 @@ class GeminiRepository @Inject constructor(
         try {
             Log.d("GeminiRepo", "Starting Noir Analysis for ${videoFiles.size} files")
             
-            val frames = extractKeyFrames(videoFiles, maxFrames = 12)
+            val frames = extractKeyFrames(videoFiles, intervalSec = 15)
             Log.d("GeminiRepo", "Extracted ${frames.size} frames")
             
             val audioData = audioFile?.let { uploadAudioToGemini(it) }
@@ -69,8 +69,10 @@ class GeminiRepository @Inject constructor(
                 Your writing style is noir—sharp, atmospheric, and dripping with cynical wit.
                 
                 # TASK
-                Analyze the provided ${if (frames.isNotEmpty()) "VIDEO FRAMES" else ""} ${if (frames.isNotEmpty() && audioData != null) "and" else ""} ${if (audioData != null) "AUDIO RECORDING" else ""} from a tabletop game session. 
                 Reconstruct a crime-scene-style report documenting key events.
+                
+                IMPORTANT: Write in the style of a 1920s Noir Detective (English).
+                Use phrases like "The dame walked in...", "The shadows were long...", "It was a cold night...".
                 
                 # RULE SET
                 1. **Transcription is Priority**: If you hear ANY speech, transcribe it in the timeline, even if it's mundane (e.g., "Testing", "Hello").
@@ -122,7 +124,10 @@ class GeminiRepository @Inject constructor(
 
         } catch (e: Exception) {
             Log.e("GeminiRepo", "Investigation failed", e)
-            return@withContext """{"headline":"SYSTEM ERROR","summary":"${e.localizedMessage}","atmosphere":"","timeline":[],"verdict":"Investigation aborted."}"""
+            // Return detailed error for debugging
+            val errorType = e.javaClass.simpleName
+            val errorMessage = e.message?.replace("\"", "'") ?: "Unknown error"
+            return@withContext """{"headline":"SYSTEM ERROR ($errorType)","summary":"$errorMessage","atmosphere":"","timeline":[],"verdict":"Investigation aborted."}"""
         }
     }
 
@@ -155,7 +160,7 @@ class GeminiRepository @Inject constructor(
                     }
                 } else {
                     Log.e("GeminiRepo", "PCM conversion failed, skipping upload.")
-                    null
+                    return null
                 }
             }
             else -> {
@@ -165,40 +170,55 @@ class GeminiRepository @Inject constructor(
         }
         
         Log.d("GeminiRepo", "Uploading converted audio to Gemini: ${audioFile.name} ($mimeType)")
-        val uri = filesApiClient.uploadFile(audioFile, mimeType)
+        val uri = filesApiClient.uploadFile(audioFile, mimeType) ?: return null
         
-        return if (uri != null) {
-            Log.d("GeminiRepo", "Audio upload SUCCESS. URI: $uri")
-            Pair(uri, mimeType)
-        } else {
-            Log.e("GeminiRepo", "Audio upload FAILED. URI is null.")
-            null
-        }
+        Log.d("GeminiRepo", "Audio upload SUCCESS. URI: $uri")
+        return Pair(uri, mimeType)
+
     }
 
-    private fun extractKeyFrames(videoFiles: List<File>, maxFrames: Int): List<Bitmap> {
+    private fun extractKeyFrames(videoFiles: List<File>, intervalSec: Int = 15): List<Bitmap> {
         val bitmaps = mutableListOf<Bitmap>()
         val retriever = MediaMetadataRetriever()
         
         try {
-            val targetFile = videoFiles.lastOrNull() 
-            if (targetFile == null) {
-                return emptyList()
-            }
-            
-            retriever.setDataSource(targetFile.absolutePath)
-            
-            val durationStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
-            val durationMs = durationStr?.toLongOrNull() ?: 0L
-            
-            if (durationMs > 0) {
-                val interval = durationMs / (maxFrames + 1)
-                for (i in 1..maxFrames) {
-                    val timeUs = (interval * i) * 1000
-                    val bitmap = retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
-                    if (bitmap != null) {
-                         bitmaps.add(bitmap)
+            // Process all video files to cover the full session
+            for (videoFile in videoFiles) {
+                if (!videoFile.exists()) continue
+                
+                try {
+                    retriever.setDataSource(videoFile.absolutePath)
+                    val durationStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+                    val durationMs = durationStr?.toLongOrNull() ?: 0L
+                    
+                    if (durationMs > 0) {
+                        // Extract 1 frame every intervalSec
+                        val frameCount = (durationMs / (intervalSec * 1000)).toInt()
+                        
+                        // Limit total frames per video to avoid OOM if video is extremely long
+                        // 1 Hour = 240 frames @ 15s interval. Safe for Bitmap memory if scaled? 
+                        // We should probably scale them down.
+                        
+                        for (i in 0..frameCount) {
+                            val timeUs = i * intervalSec * 1000000L
+                            if (timeUs >= durationMs * 1000) break
+                            
+                            // Retrieve and scale down to reduce token usage/memory (e.g., 512x512 max)
+                            // Note: getFrameAtTime returns full res. We can scale it later.
+                            val bitmap = retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                            
+                            if (bitmap != null) {
+                                // Simple resizing to save bandwidth/tokens (Gemini checks usually roughly 512px)
+                                val scaledForGemini = Bitmap.createScaledBitmap(bitmap, 512, 512, true) 
+                                if (bitmap != scaledForGemini) {
+                                    bitmap.recycle()
+                                }
+                                bitmaps.add(scaledForGemini)
+                            }
+                        }
                     }
+                } catch (e: Exception) {
+                    Log.e("GeminiRepo", "Error extracting from ${videoFile.name}", e)
                 }
             }
         } catch (e: Exception) {
@@ -207,6 +227,7 @@ class GeminiRepository @Inject constructor(
             retriever.release()
         }
         
+        Log.d("GeminiRepo", "Extracted total ${bitmaps.size} frames for analysis")
         return bitmaps
     }
 

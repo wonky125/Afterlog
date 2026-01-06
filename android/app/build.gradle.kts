@@ -128,15 +128,20 @@ dependencies {
     // Accompanist
     implementation(libs.accompanist.permissions)
 
-    // Initial Media3 (ExoPlayer) - Adding basic dependency
+    // Media3 (ExoPlayer + Transformer for Video Editing)
     implementation(libs.androidx.media3.exoplayer)
     implementation(libs.androidx.media3.ui)
+    implementation(libs.androidx.media3.transformer)
+    implementation(libs.androidx.media3.effect)
+    implementation(libs.androidx.media3.common)
 
     // Kotlin Serialization
     implementation(libs.kotlinx.serialization.json)
 
     // OkHttp (for Gemini Files API)
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+
+    // Video Synthesis: Using Android native MediaMuxer (no external dependency needed)
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
