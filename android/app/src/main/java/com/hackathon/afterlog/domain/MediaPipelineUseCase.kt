@@ -198,11 +198,10 @@ class MediaPipelineUseCase @Inject constructor(
      */
     private fun extractKeyframesFromVideos(videoFiles: List<File>): List<File> {
         val extractedImages = mutableListOf<File>()
-        val retriever = MediaMetadataRetriever()
-        
         for (video in videoFiles) {
             if (!video.exists()) continue
             
+            val retriever = MediaMetadataRetriever()
             try {
                 retriever.setDataSource(video.absolutePath)
                 // Get frame at 1 second (1000000 microseconds)
@@ -219,10 +218,10 @@ class MediaPipelineUseCase @Inject constructor(
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to extract keyframe from ${video.name}", e)
+            } finally {
+                try { retriever.release() } catch (e: Exception) {}
             }
         }
-        
-        try { retriever.release() } catch (e: Exception) {}
         
         return extractedImages
     }

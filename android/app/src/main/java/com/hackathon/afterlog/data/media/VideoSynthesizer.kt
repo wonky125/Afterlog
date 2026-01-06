@@ -215,6 +215,7 @@ class VideoSynthesizer @Inject constructor(
         
         fun start() {
             val trackIndex = selectAudioTrack()
+            if (trackIndex < 0) throw IllegalStateException("No audio track found in ${inputFile.name}")
             extractor!!.selectTrack(trackIndex)
             val inputFormat = extractor!!.getTrackFormat(trackIndex)
             val sampleRate = inputFormat.getInteger(MediaFormat.KEY_SAMPLE_RATE)
@@ -246,7 +247,8 @@ class VideoSynthesizer @Inject constructor(
             if (!inputDone) {
                 val idx = decoder!!.dequeueInputBuffer(TIMEOUT_US)
                 if (idx >= 0) {
-                    val size = extractor!!.readSampleData(decoder!!.inputBuffers[idx], 0)
+                    val buffer = decoder!!.getInputBuffer(idx) ?: return false
+                    val size = extractor!!.readSampleData(buffer, 0)
                     if (size < 0) {
                         decoder!!.queueInputBuffer(idx, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
                         inputDone = true
@@ -263,15 +265,17 @@ class VideoSynthesizer @Inject constructor(
                     if ((bufferInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) decoderDone = true
                     
                     if (bufferInfo.size > 0) {
-                        val decodedBuf = decoder!!.outputBuffers[idx]
+                        val decodedBuf = decoder!!.getOutputBuffer(idx) ?: return false
                         decodedBuf.position(bufferInfo.offset)
                         decodedBuf.limit(bufferInfo.offset + bufferInfo.size)
                         
                         val encIdx = encoder!!.dequeueInputBuffer(TIMEOUT_US)
                         if (encIdx >= 0) {
-                            encoder!!.inputBuffers[encIdx].put(decodedBuf)
+                            val encBuffer = encoder!!.getInputBuffer(encIdx) ?: return false
+                            encBuffer.clear()
+                            encBuffer.put(decodedBuf)
                             val flags = if (decoderDone) MediaCodec.BUFFER_FLAG_END_OF_STREAM else 0
-                            encoder!!.queueInputBuffer(encIdx, 0, bufferInfo.size, bufferInfo.presentationTimeUs, flags)
+                            encoder!!.queueInputBuffer(encIdx, 0, encBuffer.position(), bufferInfo.presentationTimeUs, flags)
                         }
                     } else if (decoderDone) {
                          val encIdx = encoder!!.dequeueInputBuffer(TIMEOUT_US)
@@ -286,7 +290,7 @@ class VideoSynthesizer @Inject constructor(
                 outputFormat = encoder!!.outputFormat
                 onOutput(ByteBuffer.allocate(0), true)
             } else if (idx >= 0) {
-                val encodedBuf = encoder!!.outputBuffers[idx]
+                val encodedBuf = encoder!!.getOutputBuffer(idx) ?: return false
                 if ((bufferInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG) != 0) bufferInfo.size = 0
                 
                 if (bufferInfo.size > 0) {
@@ -362,7 +366,7 @@ class VideoSynthesizer @Inject constructor(
                 outputFormat = encoder!!.outputFormat
                 onOutput(ByteBuffer.allocate(0), true)
             } else if (idx >= 0) {
-                 val encodedBuf = encoder!!.outputBuffers[idx]
+                 val encodedBuf = encoder!!.getOutputBuffer(idx) ?: return false
                  if ((bufferInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG) != 0) bufferInfo.size = 0
                  
                  if (bufferInfo.size > 0) {

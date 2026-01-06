@@ -186,32 +186,28 @@ class GeminiRepository @Inject constructor(
 
     private fun extractKeyFrames(videoFiles: List<File>, intervalSec: Int = 15): List<Bitmap> {
         val bitmaps = mutableListOf<Bitmap>()
-        val retriever = MediaMetadataRetriever()
         
         try {
-            // Process all video files to cover the full session
+        // Process all video files to cover the full session
             for (videoFile in videoFiles) {
                 if (!videoFile.exists()) continue
                 
+                val retriever = MediaMetadataRetriever()
                 try {
                     retriever.setDataSource(videoFile.absolutePath)
                     val durationStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
                     val durationMs = durationStr?.toLongOrNull() ?: 0L
                     
                     if (durationMs > 0) {
-                        // Extract 1 frame every intervalSec
-                        val frameCount = (durationMs / (intervalSec * 1000)).toInt()
+                        // Extract 1 frame every intervalSec, but CAP at MAX_FRAMES_PER_VIDEO (e.g. 50)
+                        val totalPossibleFrames = (durationMs / (intervalSec * 1000)).toInt()
+                        val frameCount = minOf(totalPossibleFrames, 50)
                         
-                        // Limit total frames per video to avoid OOM if video is extremely long
-                        // 1 Hour = 240 frames @ 15s interval. Safe for Bitmap memory if scaled? 
-                        // We should probably scale them down.
-                        
-                        for (i in 0..frameCount) {
+                        // Use until to avoid overshooting duration
+                        for (i in 0 until frameCount) {
                             val timeUs = i * intervalSec * 1000000L
-                            if (timeUs >= durationMs * 1000) break
                             
                             // Retrieve and scale down to reduce token usage/memory (e.g., 512x512 max)
-                            // Note: getFrameAtTime returns full res. We can scale it later.
                             val bitmap = retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
                             
                             if (bitmap != null) {
@@ -226,12 +222,12 @@ class GeminiRepository @Inject constructor(
                     }
                 } catch (e: Exception) {
                     Log.e("GeminiRepo", "Error extracting from ${videoFile.name}", e)
+                } finally {
+                    try { retriever.release() } catch (e: Exception) {}
                 }
             }
         } catch (e: Exception) {
             Log.e("GeminiRepo", "Frame extraction failed", e)
-        } finally {
-            retriever.release()
         }
         
         Log.d("GeminiRepo", "Extracted total ${bitmaps.size} frames for analysis")
