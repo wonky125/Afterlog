@@ -19,34 +19,42 @@ val BorderGrey = Color(0xFF2a2a2a)
 val TextGray = Color(0xFF999999)
 
 // 1920s Newspaper Palette
+// 1920s Newspaper Palette (Legacy/Pivot)
 object NewspaperColors {
-    // Paper Backgrounds
-    val Parchment = Color(0xFFF5E6D3)       // Slightly warm cream
-    val FreshPaper = Color(0xFFFAF7F2)      // Clean newsprint
-    val AgedPaper = Color(0xFFEDE4D4)       // Light sepia tint
+    // ... existing colors ...
+    val Parchment = Color(0xFFF5E6D3)
+    val FreshPaper = Color(0xFFFAF7F2)
+    val AgedPaper = Color(0xFFEDE4D4)
+    val InkBlack = Color(0xFF1A1A1A)
+    val InkGray = Color(0xFF4A4A4A)
+    val HeadlineBlack = Color(0xFF000000)
+    val HeadlineRed = Color(0xFFAA2222)
+    val MastheadGold = Color(0xFFB8860B)
+    val VictorianPurple = Color(0xFF4A2040)
+    val RuleLine = Color(0xFF2A2A2A)
+    val LightRule = Color(0xFFCCCCCC)
+    val SpeakerA = Color(0xFF553311)
+    val SpeakerB = Color(0xFF224455)
+    val SuccessGreen = Color(0xFF2D5A27)
+    val WarningAmber = Color(0xFFB8860B)
+    val ErrorRed = Color(0xFF8B0000)
+}
+
+// Space Horror Terminal Palette
+object SpaceTerminalColors {
+    val Background = Color(0xFF050505)   // Near absolute black
+    val Surface = Color(0xFF0D1117)      // Dark slate surface
     
-    // Ink Colors
-    val InkBlack = Color(0xFF1A1A1A)        // Rich black ink
-    val InkGray = Color(0xFF4A4A4A)         // Faded ink
-    val HeadlineBlack = Color(0xFF000000)   // Pure black for headlines
+    val PrimaryGreen = Color(0xFF39FF14) // Classic terminal green
+    val SecondaryCyan = Color(0xFF00F3FF) // System cyan
+    val WarningRed = Color(0xFFFF3131)   // Hazard red
+    val AlertOrange = Color(0xFFFF9D00)  // Caution orange
     
-    // Accent Colors
-    val HeadlineRed = Color(0xFFAA2222)     // "EXTRA!" banner
-    val MastheadGold = Color(0xFFB8860B)    // Dark goldenrod
-    val VictorianPurple = Color(0xFF4A2040) // Noir accent
+    val TextMain = Color(0xFFD1D5DB)     // Light gray for body
+    val TextDim = Color(0xFF6B7280)      // Muted gray
     
-    // Divider Colors  
-    val RuleLine = Color(0xFF2A2A2A)        // Thin black lines
-    val LightRule = Color(0xFFCCCCCC)       // Subtle dividers
-    
-    // Speaker Colors (for timeline)
-    val SpeakerA = Color(0xFF553311)        // Leather brown
-    val SpeakerB = Color(0xFF224455)        // Deep blue-gray
-    
-    // Status Colors
-    val SuccessGreen = Color(0xFF2D5A27)    // Vintage success
-    val WarningAmber = Color(0xFFB8860B)    // Vintage amber
-    val ErrorRed = Color(0xFF8B0000)        // Blood red
+    val ScanlineColor = Color(0xFF000000).copy(alpha = 0.3f)
+    val GlowGreen = Color(0xFF39FF14).copy(alpha = 0.15f)
 }
 
 // Backwards compatibility alias

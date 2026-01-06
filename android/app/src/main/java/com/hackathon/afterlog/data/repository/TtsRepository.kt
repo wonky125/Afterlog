@@ -49,12 +49,11 @@ class TtsRepository @Inject constructor(
         // Primary: Google Cloud TTS
         val requestBody = TtsRequest(
             input = TtsInput(text = text),
-            // en-US-Neural2-D is a deep, professional male voice suitable for "Noir" persona
-            voice = TtsVoice(languageCode = "en-US", name = "en-US-Neural2-D"), 
+            voice = TtsVoice(languageCode = "en-US", name = "en-US-Neural2-F"), // MOTH_ER AI Female Voice
             audioConfig = TtsAudioConfig(
                 audioEncoding = "MP3",
-                pitch = -4.0, // Lower pitch for extra depth
-                speakingRate = 0.85 // Slower rate for dramatic effect
+                pitch = 0.0, // Neutral pitch for clear AI tone
+                speakingRate = 1.05 // Slightly faster for efficient machine communication
             )
         )
 
