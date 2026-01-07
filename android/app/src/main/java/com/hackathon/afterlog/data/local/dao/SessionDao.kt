@@ -23,4 +23,10 @@ interface SessionDao {
 
     @Query("SELECT * FROM sessions ORDER BY startTime DESC LIMIT 1")
     suspend fun getLastSession(): SessionEntity?
+
+    @Query("UPDATE sessions SET perspectiveGuideJson = :json WHERE id = :sessionId")
+    suspend fun updatePerspectiveGuide(sessionId: String, json: String?)
+
+    @Query("SELECT perspectiveGuideJson FROM sessions WHERE id = :sessionId")
+    suspend fun getPerspectiveGuideJson(sessionId: String): String?
 }

@@ -1,3 +1,18 @@
+## 2026-01-07 개발 계획
+- **목표**: 비디오 합성/재생 완성 + 음성 TTS(READ REPORT), 리포트 생성 시 TTS 포함하여 최종 영상 완성.
+- **모델**: 현재 Gemini 3 Pro Preview(`gemini-3-pro-preview`)를 사용중, 텍스트+음성 동시 분석에 탁월.
+- **기능**: PLAY REEL은 이미지/TTS가 결합된 MP4를 재생. 동영상 하이라이트 있으면 스티칭/합성.
+- **로직**: Rolling Buffer 도입하여 **과거 1.5분**도 저장 (`withAudioEnabled()`).
+- **추가 개선**: 동영상 촬영 시 Gemini 3 Pro가 오디오/비디오를 동시 분석하여 `SRT`(00:00:01,000 대사) 자막을 생성할 수 있는지 MediaMuxer/ExoPlayer 연동 테스트 필요.
+- **비용/성능**: maxOutputTokens=4096 설정, 프레임 제한 40개 유지. 영상 분석 intervalSec 20~30초로 조정 고려.
+
+### 체크리스트
+- [x] VideoManager: `.withAudioEnabled()` 및 롤링버퍼 촬영 로직 구현 
+- [x] GeminiRepository: 모델명 `gemini-3-pro-preview`로 변경 및 프레임/오디오 전송 구현
+- [x] 동영상 재생 화면 구현: PLAY REEL 클릭시 비디오 플레이어 연결
+- [ ] 자막: 동영상 분석 후 Gemini 3 Pro가 `SRT` 자막 생성 할 수 있는지 확인 및 구현
+- [ ] 오디오/영상 오프셋 조정(optional), 영상 자르기+붙이기 정확도 개선
+
 🎞️ 애프터로그 (Afterlog - Cinematic Replay)
 
 
@@ -84,7 +99,7 @@ Firebase Integration: 사진은 Storage에, 로그 및 이벤트 정보는 Fires
 3) 시네마틱 보고서 인터페이스 (Cinematic Report UI)
 해커톤의 'UX 완성도'를 극대화하기 위해 ExoPlayer와 Jetpack Compose를 결합한 매거진 스타일 레이아웃을 채택합니다.
 
-상단 섹션: ExoPlayer를 통한 하이라이트 영상 무한 반복 재생.
+상단 섹션: ExoPlayer를 통한 하이라이트 영상 재생.
 중단 섹션: AI가 생성한 '신문 헤드라인' 스타일의 총평.
 하단 섹션: 타임라인 기반 카드 리스트. 사진 클릭 시 영상이 해당 시점으로 이동(Sync-Play).
 @Composable

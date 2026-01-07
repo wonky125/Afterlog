@@ -9,6 +9,7 @@ import androidx.camera.video.*
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
 import com.hackathon.afterlog.data.local.entities.MediaType
+import com.hackathon.afterlog.data.model.PerspectiveGuideConfig
 import com.hackathon.afterlog.data.repository.LocalRepository
 import com.hackathon.afterlog.data.local.FileManager
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -34,6 +35,7 @@ class VideoManager @Inject constructor(
     // Executor removed (using Coroutines)
     private var isCapturing = false
     private var currentSessionId: String? = null
+    private var perspectiveGuide: PerspectiveGuideConfig? = null
 
     // Rolling Buffer: Stores paths of recent temp files
     // Capacity = 6 (3 minutes worth of 30s chunks)
@@ -46,6 +48,11 @@ class VideoManager @Inject constructor(
     // Centered Highlight Logic
     private var pendingHighlightCount = 0
     private val highlightMutex = Mutex()
+
+    fun setPerspectiveGuide(config: PerspectiveGuideConfig) {
+        perspectiveGuide = config
+        Log.d("VideoManager", "Perspective guide applied: ${config.toSerializedString()}")
+    }
 
     // bindCamera REMOVED -> handled by CameraUseCaseManager
 
@@ -208,7 +215,9 @@ class VideoManager @Inject constructor(
         currentScope?.launch(Dispatchers.IO) {
             if (!file.exists()) return@launch
             
-            val timestamp = timeManager.getCurrentTime()
+            val parsedTimestamp = extractTimestampFromFileName(file.name)
+            val timestamp = parsedTimestamp ?: timeManager.getCurrentTime()
+            Log.d("VideoManager", "Highlight timestamp=$timestamp parsed=$parsedTimestamp file=${file.name}")
             val permFile = fileManager.getHighlightVideoFile(sessionId, file.name)
             
             try {
@@ -222,11 +231,17 @@ class VideoManager @Inject constructor(
                     decibel = null,
                     timestamp = timestamp
                 )
-                Log.d("VideoManager", "✅ Saved VIDEO_HIGHLIGHT: ${permFile.name}")
+                val guideText = perspectiveGuide?.toSerializedString() ?: "unset"
+                Log.d("VideoManager", "Saved VIDEO_HIGHLIGHT: ${permFile.name} guide=$guideText")
             } catch (e: Exception) {
                 Log.e("VideoManager", "Failed to copy highlight file", e)
             }
         }
+    }
+
+    private fun extractTimestampFromFileName(fileName: String): Long? {
+        val regex = Regex("temp_vid_.*_(\\d+)\\.mp4$")
+        return regex.find(fileName)?.groupValues?.getOrNull(1)?.toLongOrNull()
     }
 
     /**
@@ -263,6 +278,7 @@ class VideoManager @Inject constructor(
         Log.d("VideoManager", "Video recording stopped")
         // Cleanup old buffer files to save space
         activeRecording = null
+        currentScope?.launch(Dispatchers.IO) { fileManager.clearTempFiles() } ?: fileManager.clearTempFiles()
         // Note: We don't delete files here to allow post-session analysis if needed, 
         // but for safety we can clear the memory reference.
         tempBuffer.clear()

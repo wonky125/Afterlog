@@ -20,4 +20,7 @@ interface LogDao {
 
     @Query("DELETE FROM media_logs WHERE sessionId = :sessionId")
     suspend fun deleteLogsBySession(sessionId: String)
+
+    @Query("SELECT sessionId FROM media_logs ORDER BY timestamp DESC LIMIT 1")
+    suspend fun getLastLoggedSessionId(): String?
 }

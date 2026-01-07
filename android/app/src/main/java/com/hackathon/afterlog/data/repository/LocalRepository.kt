@@ -5,6 +5,7 @@ import com.hackathon.afterlog.data.local.dao.SessionDao
 import com.hackathon.afterlog.data.local.entities.MediaLogEntity
 import com.hackathon.afterlog.data.local.entities.MediaType
 import com.hackathon.afterlog.data.local.entities.SessionEntity
+import com.hackathon.afterlog.data.model.PerspectiveGuideConfig
 import kotlinx.coroutines.flow.Flow
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -29,12 +30,30 @@ class LocalRepository @Inject constructor(
         sessionDao.updateSessionEndTime(sessionId, timeManager.getCurrentTime())
     }
 
+    suspend fun savePerspectiveGuide(sessionId: String, config: PerspectiveGuideConfig) {
+        sessionDao.updatePerspectiveGuide(sessionId, config.toSerializedString())
+    }
+
+    suspend fun getPerspectiveGuide(sessionId: String): PerspectiveGuideConfig? {
+        val json = sessionDao.getPerspectiveGuideJson(sessionId)
+        return PerspectiveGuideConfig.fromSerializedString(json)
+    }
+
+    suspend fun getLastSavedPerspectiveGuide(): PerspectiveGuideConfig? {
+        val lastSession = sessionDao.getLastSession() ?: return null
+        return PerspectiveGuideConfig.fromSerializedString(lastSession.perspectiveGuideJson)
+    }
+
     fun getAllSessions(): Flow<List<SessionEntity>> {
         return sessionDao.getAllSessions()
     }
 
     suspend fun getSessionById(sessionId: String): SessionEntity? {
         return sessionDao.getSessionById(sessionId)
+    }
+    
+    suspend fun getSessionStartTime(sessionId: String): Long? {
+        return sessionDao.getSessionById(sessionId)?.startTime
     }
 
     // Log Operations
@@ -62,11 +81,15 @@ class LocalRepository @Inject constructor(
     suspend fun getSessionLogs(sessionId: String): List<MediaLogEntity> {
         val targetId = if (sessionId == "last_session") {
             try {
-                // Determine the actual last session
-                val lastSession = sessionDao.getLastSession()
-                lastSession?.id ?: sessionId
+                // Prefer the most recent session that actually has logs.
+                val lastLoggedSessionId = logDao.getLastLoggedSessionId()
+                if (!lastLoggedSessionId.isNullOrBlank()) {
+                    lastLoggedSessionId
+                } else {
+                    val lastSession = sessionDao.getLastSession()
+                    lastSession?.id ?: sessionId
+                }
             } catch (e: Exception) {
-                // Fallback or log error if DAO method missing
                 sessionId
             }
         } else {

@@ -25,9 +25,12 @@ import com.hackathon.afterlog.ui.theme.NewspaperTypography
 fun InvestigationReportView(
     report: GeminiReport,
     videoPath: String? = null,
+    subtitlePath: String? = null,
     isPlaying: Boolean = false,
     isTtsLoading: Boolean = false,
-    onPlayClick: () -> Unit = {}
+    isReplayGenerating: Boolean = false,
+    onPlayClick: () -> Unit = {},
+    onVideoClick: (String, String?) -> Unit = { _, _ -> }
 ) {
     Box(modifier = Modifier.fillMaxSize()) {
         NoirSurface {
@@ -90,9 +93,10 @@ fun InvestigationReportView(
                         NoirSectionHeader("MOVING PICTURE EVIDENCE")
                         // Simplified Video Placeholder / Launcher
                         NoirButton(
-                            text = "PLAY REEL",
-                            onClick = { /* TODO: Launch Video Player */ },
-                            modifier = Modifier.fillMaxWidth()
+                            text = if (isReplayGenerating) "GENERATING..." else "PLAY REEL",
+                            onClick = { onVideoClick(videoPath, subtitlePath) },
+                            modifier = Modifier.fillMaxWidth(),
+                            enabled = !isReplayGenerating
                         )
                         Spacer(modifier = Modifier.height(24.dp))
                     }

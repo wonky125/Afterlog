@@ -2,6 +2,7 @@ package com.hackathon.afterlog.service
 
 import android.content.Context
 import android.util.Log
+import android.view.Surface
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
 import androidx.camera.video.FallbackStrategy
@@ -46,6 +47,7 @@ class CameraUseCaseManager @Inject constructor(
                 imageCapture = ImageCapture.Builder()
                     .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
                     .build()
+                imageCapture?.targetRotation = Surface.ROTATION_90
                 
                 // 2. Setup VideoCapture
                 val qualitySelector = QualitySelector.from(
@@ -56,6 +58,7 @@ class CameraUseCaseManager @Inject constructor(
                     .setQualitySelector(qualitySelector)
                     .build()
                 videoCapture = VideoCapture.withOutput(recorder)
+                videoCapture?.targetRotation = Surface.ROTATION_90
                 
                 val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
                 

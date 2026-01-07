@@ -56,31 +56,31 @@ class VideoSynthesizer @Inject constructor(
         
         Log.d(TAG, "Starting Synthesis: Audio=${audioFile.name}, Image=${imageFile.name}")
         
+        var muxer: MediaMuxer? = null
+        var audioRef: AudioProcessor? = null
+        var videoRef: VideoProcessor? = null
+        
         try {
-            val muxer = MediaMuxer(outputFile.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
-            val audioRef = AudioProcessor(audioFile)
-            val videoRef = VideoProcessor(imageFile, muxer)
+            val m = MediaMuxer(outputFile.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+            muxer = m
+            val a = AudioProcessor(audioFile)
+            audioRef = a
+            val v = VideoProcessor(imageFile, m)
+            videoRef = v
             
             // 1. Prepare Audio
-            audioRef.prepare()
-            val durationUs = audioRef.getDurationUs() ?: (imageDurationSec * 1_000_000L)
+            a.prepare()
+            val durationUs = a.getDurationUs() ?: (imageDurationSec * 1_000_000L)
             
             Log.d(TAG, "Target Duration: ${durationUs / 1_000_000.0} sec")
             
             // 2. Prepare Video
-            videoRef.prepare(1280, 720, durationUs)
+            v.prepare(1280, 720, durationUs)
             
             // 3. Start Processing
-            muxer.setOrientationHint(0)
+            m.setOrientationHint(0)
             
-            processInterleaved(muxer, audioRef, videoRef)
-            
-            muxer.stop()
-            muxer.release()
-            
-            // Cleanup
-            audioRef.release()
-            videoRef.release()
+            processInterleaved(m, a, v)
             
             Log.d(TAG, "✅ Synthesis Complete: ${outputFile.length()} bytes")
             return@withContext outputFile
@@ -89,9 +89,23 @@ class VideoSynthesizer @Inject constructor(
             Log.e(TAG, "Synthesis failed", e)
             outputFile.delete()
             return@withContext null
+        } finally {
+            // Ensure resources are released even if muxer fails
+            try { 
+                muxer?.stop() 
+            } catch (e: Exception) {
+                Log.w(TAG, "Muxer stop failed", e)
+            }
+            try { 
+                muxer?.release() 
+            } catch (e: Exception) {
+                Log.w(TAG, "Muxer release failed", e)
+            }
+            audioRef?.release()
+            videoRef?.release()
         }
     }
-    
+
     // --- Helper Classes ---
     
     private data class PendingSample(
@@ -390,10 +404,10 @@ class VideoSynthesizer @Inject constructor(
                  
                  // Load bitmap
                  val bitmap = BitmapFactory.decodeFile(imageFile.absolutePath)
-                 if (bitmap != null) {
-                     textureId = textureRenderer!!.loadTexture(bitmap)
-                     bitmap.recycle()
-                 }
+                     ?: throw IllegalStateException("Failed to decode image: ${imageFile.name}")
+                 
+                 textureId = textureRenderer!!.loadTexture(bitmap)
+                 bitmap.recycle()
              }
              
              android.opengl.GLES20.glViewport(0, 0, 1280, 720)
@@ -406,9 +420,14 @@ class VideoSynthesizer @Inject constructor(
              
              eglInputSurface!!.swapBuffers()
         }
-        
+
         fun release() {
-             try { eglInputSurface?.release(); encoder?.stop(); encoder?.release() } catch(e:Exception){}
+            try { 
+                textureRenderer?.cleanup()
+                eglInputSurface?.release()
+                encoder?.stop()
+                encoder?.release() 
+            } catch(e:Exception){}
         }
     }
 
@@ -431,6 +450,9 @@ class VideoSynthesizer @Inject constructor(
             val configs = arrayOfNulls<EGLConfig>(1)
             val numConfigs = IntArray(1)
             EGL14.eglChooseConfig(eglDisplay, attribList, 0, configs, 0, configs.size, numConfigs, 0)
+            if (numConfigs[0] == 0 || configs[0] == null) {
+                throw RuntimeException("Failed to find suitable EGL config")
+            }
             
             val ctxAttribs = intArrayOf(EGL14.EGL_CONTEXT_CLIENT_VERSION, 2, EGL14.EGL_NONE)
             eglContext = EGL14.eglCreateContext(eglDisplay, configs[0], EGL14.EGL_NO_CONTEXT, ctxAttribs, 0)
@@ -561,6 +583,13 @@ class VideoSynthesizer @Inject constructor(
             android.opengl.GLES20.glShaderSource(shader, shaderCode)
             android.opengl.GLES20.glCompileShader(shader)
             return shader
+        }
+
+        fun cleanup() {
+            if (programId != 0) {
+                android.opengl.GLES20.glDeleteProgram(programId)
+                programId = 0
+            }
         }
     }
     

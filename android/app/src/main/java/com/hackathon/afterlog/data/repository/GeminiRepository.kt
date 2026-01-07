@@ -8,8 +8,15 @@ import com.google.ai.client.generativeai.GenerativeModel
 import com.google.ai.client.generativeai.type.content
 import com.google.ai.client.generativeai.type.generationConfig
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.longOrNull
 import java.io.File
+import java.io.FileInputStream
 import java.io.FileOutputStream
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -22,17 +29,30 @@ class GeminiRepository @Inject constructor(
     private val filesApiClient: GeminiFilesApiClient,
     @ApplicationContext private val context: Context
 ) {
+    data class CaptionLine(val startMs: Long, val endMs: Long, val text: String)
 
     private val generativeModel = GenerativeModel(
-        modelName = "gemini-2.5-flash",
+        modelName = "gemini-3-pro-preview",
         apiKey = BuildConfig.GEMINI_API_KEY,
         generationConfig = generationConfig {
             temperature = 0.7f
             topK = 40
             topP = 0.95f
-            maxOutputTokens = 8192
+            maxOutputTokens = 4096
         }
     )
+
+    private val retryableErrorHints = listOf(
+        "503",
+        "429",
+        "unavailable",
+        "overloaded",
+        "resource_exhausted",
+        "temporarily",
+        "timeout"
+    )
+    
+    private val json = Json { ignoreUnknownKeys = true }
 
     suspend fun testConnection(): String = withContext(Dispatchers.IO) {
         try {
@@ -116,7 +136,7 @@ class GeminiRepository @Inject constructor(
                 text(prompt)
             }
 
-            val response = generativeModel.generateContent(inputContent)
+            val response = generateWithRetry(inputContent)
             
             frames.forEach { it.recycle() }
 
@@ -124,11 +144,120 @@ class GeminiRepository @Inject constructor(
 
         } catch (e: Exception) {
             Log.e("GeminiRepo", "Investigation failed", e)
+            if (isRetryableGeminiError(e)) {
+                return@withContext """{"headline":"ANALYSIS DELAYED","summary":"Gemini is temporarily overloaded. Please retry.","atmosphere":"","article":"","timeline":[],"verdict":"Awaiting a clearer signal."}"""
+            }
             // Return detailed error for debugging
             val errorType = e.javaClass.simpleName
             val errorMessage = e.message?.replace("\"", "'") ?: "Unknown error"
             return@withContext """{"headline":"SYSTEM ERROR ($errorType)","summary":"$errorMessage","atmosphere":"","timeline":[],"verdict":"Investigation aborted."}"""
         }
+    }
+
+    /**
+     * Generates noir-style minimal captions (headline tone) for key events.
+     * Output format:
+     * {
+     *   "events": [
+     *     {"start_ms": 12000, "end_ms": 14000, "text": "운명의 굴림"}
+     *   ]
+     * }
+     */
+    suspend fun generateNoirCaptions(
+        audioFile: File,
+        eventHints: List<String> = emptyList()
+    ): List<CaptionLine> = withContext(Dispatchers.IO) {
+        try {
+            val audioData = uploadAudioToGemini(audioFile) ?: return@withContext emptyList()
+
+            val prompt = """
+                You are a 1920s noir journalist writing ultra-short captions for a newsreel.
+                Keep the mood: fate, evidence, betrayal, silence breaking.
+                
+                RULES:
+                - Output JSON only: {"events":[{"start_ms":12000,"end_ms":14000,"text":"어둠이 갈라졌다"}]}
+                - 5~10 events max.
+                - text: 2~5 words (~12 chars), no slang, no modern internet words.
+                - Use strong noir phrases: 운명, 침묵, 단서, 그림자, 배신, 결판.
+                - Align to audio moments (scream, loud spike, tense dialogue).
+                
+                HINTS:
+                ${eventHints.joinToString(separator = "; ")}
+            """.trimIndent()
+
+            val inputContent = content {
+                fileData(uri = audioData.first, mimeType = audioData.second)
+                text(prompt)
+            }
+
+            val response = generateWithRetry(inputContent)
+            val raw = response.text ?: return@withContext emptyList()
+            return@withContext parseCaptions(raw)
+        } catch (e: Exception) {
+            Log.e("GeminiRepo", "Caption generation failed", e)
+            return@withContext emptyList()
+        }
+    }
+
+    private fun parseCaptions(raw: String): List<CaptionLine> {
+        return try {
+            var cleaned = raw.trim()
+            if (cleaned.startsWith("```")) {
+                cleaned = cleaned.removePrefix("```json").removePrefix("```").removeSuffix("```").trim()
+            }
+            val root = json.parseToJsonElement(cleaned).jsonObject
+            val events = root["events"]?.jsonArray ?: return emptyList()
+            events.mapNotNull { el ->
+                runCatching {
+                    val obj = el.jsonObject
+                    val start = obj["start_ms"]?.jsonPrimitive?.longOrNull ?: return@runCatching null
+                    val end = obj["end_ms"]?.jsonPrimitive?.longOrNull ?: return@runCatching null
+                    val text = obj["text"]?.jsonPrimitive?.content ?: return@runCatching null
+                    CaptionLine(startMs = start, endMs = end, text = text)
+                }.getOrNull()
+            }
+        } catch (e: Exception) {
+            Log.e("GeminiRepo", "Caption parse failed", e)
+            emptyList()
+        }
+    }
+
+    private suspend fun generateWithRetry(inputContent: com.google.ai.client.generativeai.type.Content)
+        : com.google.ai.client.generativeai.type.GenerateContentResponse {
+        val maxAttempts = 3
+        var delayMs = 1000L
+        var lastError: Exception? = null
+
+        repeat(maxAttempts) { attempt ->
+            try {
+                return generativeModel.generateContent(inputContent)
+            } catch (e: Exception) {
+                lastError = e
+                val isLastAttempt = attempt == maxAttempts - 1
+                if (isLastAttempt || !isRetryableGeminiError(e)) {
+                    throw e
+                }
+                Log.w("GeminiRepo", "Gemini overloaded/unavailable. Retrying in ${delayMs}ms", e)
+                delay(delayMs)
+                delayMs *= 2
+            }
+        }
+        throw lastError ?: IllegalStateException("Gemini generateContent failed with unknown error.")
+    }
+
+    private fun isRetryableGeminiError(e: Throwable): Boolean {
+        var current: Throwable? = e
+        while (current != null) {
+            val message = current.message?.lowercase() ?: ""
+            if (retryableErrorHints.any { hint -> message.contains(hint) }) return true
+            val simpleName = current.javaClass.simpleName.lowercase()
+            if (simpleName.contains("serverexception") || simpleName.contains("apiexception")) {
+                // Check for specific HTTP status codes or clearer messages
+                if (message.contains("503") || message.contains("504") || message.contains("unavailable")) return true
+            }
+            current = current.cause
+        }
+        return false
     }
 
     private suspend fun uploadAudioToGemini(audioFile: File): Pair<String, String>? {
@@ -177,12 +306,18 @@ class GeminiRepository @Inject constructor(
 
     }
 
-    private fun extractKeyFrames(videoFiles: List<File>, intervalSec: Int = 15): List<Bitmap> {
+    private fun extractKeyFrames(
+        videoFiles: List<File>,
+        intervalSec: Int = 15,
+        maxTotalFrames: Int = 40
+    ): List<Bitmap> {
         val bitmaps = mutableListOf<Bitmap>()
+        var totalFrames = 0
         
         try {
         // Process all video files to cover the full session
             for (videoFile in videoFiles) {
+                if (totalFrames >= maxTotalFrames) break
                 if (!videoFile.exists()) continue
                 
                 val retriever = MediaMetadataRetriever()
@@ -192,9 +327,10 @@ class GeminiRepository @Inject constructor(
                     val durationMs = durationStr?.toLongOrNull() ?: 0L
                     
                     if (durationMs > 0) {
-                        // Extract 1 frame every intervalSec, but CAP at MAX_FRAMES_PER_VIDEO (e.g. 50)
+                        // Extract 1 frame every intervalSec, but cap per video to limit token usage.
                         val totalPossibleFrames = (durationMs / (intervalSec * 1000)).toInt()
-                        val frameCount = minOf(totalPossibleFrames, 50)
+                        val remaining = maxTotalFrames - totalFrames
+                        val frameCount = minOf(totalPossibleFrames, 20, remaining)
                         
                         // Use until to avoid overshooting duration
                         for (i in 0 until frameCount) {
@@ -210,6 +346,8 @@ class GeminiRepository @Inject constructor(
                                     bitmap.recycle()
                                 }
                                 bitmaps.add(scaledForGemini)
+                                totalFrames++
+                                if (totalFrames >= maxTotalFrames) break
                             }
                         }
                     }
@@ -233,14 +371,14 @@ class GeminiRepository @Inject constructor(
     private fun convertPcmToWav(pcmFile: File): File? {
         return try {
             val wavFile = File(pcmFile.parent, pcmFile.nameWithoutExtension + ".wav")
-            val pcmData = pcmFile.readBytes()
+            val dataLen = pcmFile.length()
             
             val sampleRate = 16000 // AppConstants.Audio.SAMPLE_RATE
             val channels = 1
             val byteRate = sampleRate * channels * 2
             
             val header = ByteArray(44)
-            val totalDataLen = pcmData.size.toLong() + 36
+            val totalDataLen = dataLen + 36
 
             
             header[0] = 'R'.code.toByte() 
@@ -295,15 +433,21 @@ class GeminiRepository @Inject constructor(
             header[38] = 't'.code.toByte()
             header[39] = 'a'.code.toByte()
             
-            val dataLen = pcmData.size.toLong()
             header[40] = (dataLen and 0xff).toByte()
             header[41] = ((dataLen shr 8) and 0xff).toByte()
             header[42] = ((dataLen shr 16) and 0xff).toByte()
             header[43] = ((dataLen shr 24) and 0xff).toByte()
             
-            FileOutputStream(wavFile).use { out ->
-                out.write(header)
-                out.write(pcmData)
+            FileInputStream(pcmFile).use { input ->
+                FileOutputStream(wavFile).use { out ->
+                    out.write(header)
+                    val buffer = ByteArray(16 * 1024)
+                    while (true) {
+                        val read = input.read(buffer)
+                        if (read <= 0) break
+                        out.write(buffer, 0, read)
+                    }
+                }
             }
             
             Log.d("GeminiRepo", "Converted PCM to WAV: ${wavFile.absolutePath} (${wavFile.length()} bytes)")

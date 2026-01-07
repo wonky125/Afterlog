@@ -10,7 +10,7 @@ import com.hackathon.afterlog.data.local.entities.SessionEntity
 
 @Database(
     entities = [SessionEntity::class, MediaLogEntity::class, AnalysisResultEntity::class],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
