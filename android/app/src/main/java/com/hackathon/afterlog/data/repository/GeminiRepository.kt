@@ -252,7 +252,8 @@ class GeminiRepository @Inject constructor(
             if (retryableErrorHints.any { hint -> message.contains(hint) }) return true
             val simpleName = current.javaClass.simpleName.lowercase()
             if (simpleName.contains("serverexception") || simpleName.contains("apiexception")) {
-                if (message.contains("5") || message.contains("unavailable")) return true
+                // Check for specific HTTP status codes or clearer messages
+                if (message.contains("503") || message.contains("504") || message.contains("unavailable")) return true
             }
             current = current.cause
         }

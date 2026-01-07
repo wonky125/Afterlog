@@ -110,7 +110,62 @@ fun HomeScreen(
                     )
                 }
             } else {
-                // Main Controls
+                val guide by viewModel.guideConfig.collectAsState()
+                val lowPowerHint by viewModel.lowPowerHint.collectAsState()
+                var showPreview by remember { mutableStateOf(false) }
+
+                NoirSectionHeader("PERSPECTIVE GUIDE")
+                NoirCard(modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text(
+                            text = "Align the four corners to help Afterlog observe your board edges.",
+                            style = NoirTypography.body,
+                            color = NoirColors.TextBody
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        PerspectiveGuideEditor(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(220.dp),
+                            config = guide,
+                            onGuideChanged = viewModel::setGuide
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            NoirButton(
+                                text = "CONFIRM LAYOUT",
+                                onClick = viewModel::confirmLayout,
+                                modifier = Modifier.weight(1f)
+                            )
+                            NoirButton(
+                                text = "OPEN MINI PREVIEW",
+                                onClick = { showPreview = true },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(12.dp))
+                        AutoLevelIndicator(modifier = Modifier.fillMaxWidth())
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            text = lowPowerHint,
+                            style = NoirTypography.caption,
+                            color = NoirColors.TextSecondary
+                        )
+                    }
+                }
+
+                if (showPreview) {
+                    LayoutPreviewDialog(
+                        guide = guide,
+                        onDismiss = { showPreview = false }
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(24.dp))
+
                 NoirSectionHeader("MONITORING PROTOCOLS")
                 
                 Row(
@@ -120,11 +175,18 @@ fun HomeScreen(
                     NoirButton(
                         text = "START ARCHIVE",
                         onClick = {
+                            val layoutGuide = guide
+                            viewModel.confirmLayout()
                             scope.launch {
                                 try {
                                     val sessionId = viewModel.createNewSession()
+                                    viewModel.persistGuide(sessionId)
                                     val intent = Intent(context, AfterLogService::class.java).apply {
                                         putExtra(AfterLogService.EXTRA_SESSION_ID, sessionId)
+                                        putExtra(
+                                            AfterLogService.EXTRA_PERSPECTIVE_GUIDE,
+                                            layoutGuide.toSerializedString()
+                                        )
                                     }
                                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                                         context.startForegroundService(intent)

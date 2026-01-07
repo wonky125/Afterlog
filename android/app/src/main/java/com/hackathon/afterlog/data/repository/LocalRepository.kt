@@ -5,6 +5,7 @@ import com.hackathon.afterlog.data.local.dao.SessionDao
 import com.hackathon.afterlog.data.local.entities.MediaLogEntity
 import com.hackathon.afterlog.data.local.entities.MediaType
 import com.hackathon.afterlog.data.local.entities.SessionEntity
+import com.hackathon.afterlog.data.model.PerspectiveGuideConfig
 import kotlinx.coroutines.flow.Flow
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -27,6 +28,20 @@ class LocalRepository @Inject constructor(
 
     suspend fun endSession(sessionId: String) {
         sessionDao.updateSessionEndTime(sessionId, timeManager.getCurrentTime())
+    }
+
+    suspend fun savePerspectiveGuide(sessionId: String, config: PerspectiveGuideConfig) {
+        sessionDao.updatePerspectiveGuide(sessionId, config.toSerializedString())
+    }
+
+    suspend fun getPerspectiveGuide(sessionId: String): PerspectiveGuideConfig? {
+        val json = sessionDao.getPerspectiveGuideJson(sessionId)
+        return PerspectiveGuideConfig.fromSerializedString(json)
+    }
+
+    suspend fun getLastSavedPerspectiveGuide(): PerspectiveGuideConfig? {
+        val lastSession = sessionDao.getLastSession() ?: return null
+        return PerspectiveGuideConfig.fromSerializedString(lastSession.perspectiveGuideJson)
     }
 
     fun getAllSessions(): Flow<List<SessionEntity>> {

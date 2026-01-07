@@ -6,5 +6,6 @@ enum class MediaType {
     VIDEO_CHUNK, // New type for video fragments
     SCREAM_EVENT,
     AUDIO_SICK,
-    VIDEO_HIGHLIGHT
+    VIDEO_HIGHLIGHT,
+    SUBTITLE
 }

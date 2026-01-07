@@ -155,14 +155,10 @@ class VideoStitcher @Inject constructor(
 
             val composition = Composition.Builder(listOf(videoSequence, audioSequence)).build()
 
-            val result = try {
-                executeTransformation(composition, outputFile)
-            } finally {
-                // Cleanup
-            }
+            val result = executeTransformation(composition, outputFile)
 
             if (result.isSuccess && outputFile.exists()) {
-                Log.d(TAG, "??Stitch (clipped audio) complete: ${outputFile.absolutePath}")
+                Log.d(TAG, "✅ Stitch (clipped audio) complete: ${outputFile.absolutePath}")
                 Result.success(outputFile)
             } else {
                 Result.failure(result.exceptionOrNull() ?: Exception("Unknown stitching error"))
@@ -374,6 +370,10 @@ class VideoStitcher @Inject constructor(
             val channels = 1
             val byteRate = sampleRate * channels * 2
             val dataLen = pcmFile.length()
+            // Check for potential overflow, though unlikely for mobile recordings (2GB limit for Wav)
+            if (dataLen > Int.MAX_VALUE - 36) {
+                 Log.w(TAG, "PCM file too large for standard WAV header: $dataLen")
+            }
             val totalDataLen = dataLen + 36
 
             val header = ByteArray(44)

@@ -40,7 +40,11 @@ fun VideoPlayerScreen(
         when {
             videoPath.startsWith("content://", ignoreCase = true) -> Uri.parse(videoPath)
             videoPath.startsWith("file://", ignoreCase = true) -> Uri.parse(videoPath)
-            else -> Uri.fromFile(File(videoPath))
+            else -> {
+                // Decode assuming UTF-8 standard charset
+                val decoded = java.net.URLDecoder.decode(videoPath, java.nio.charset.StandardCharsets.UTF_8.name())
+                Uri.fromFile(File(decoded))
+            } 
         }
     }
     
@@ -85,7 +89,9 @@ fun VideoPlayerScreen(
                     }
                 },
                 update = { view ->
-                    view.player = exoPlayer
+                    if (view.player == null) {
+                        view.player = exoPlayer
+                    }
                 }
             )
 
