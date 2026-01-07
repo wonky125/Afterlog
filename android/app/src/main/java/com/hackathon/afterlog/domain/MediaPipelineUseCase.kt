@@ -49,6 +49,11 @@ class MediaPipelineUseCase @Inject constructor(
     private val localRepository: LocalRepository
 ) {
     private val json = Json { ignoreUnknownKeys = true }
+
+    data class ReplayAssets(
+        val videoFile: File,
+        val subtitleFile: File?
+    )
     
     /**
      * Generates a cinematic replay MP4 for a given session.
@@ -56,7 +61,7 @@ class MediaPipelineUseCase @Inject constructor(
      * @param sessionId The game session ID
      * @return Result<File> containing the generated MP4 file or error info
      */
-    suspend fun generateReplay(sessionId: String): Result<File> = withContext(Dispatchers.IO) {
+    suspend fun generateReplay(sessionId: String): Result<ReplayAssets> = withContext(Dispatchers.IO) {
         Log.d(TAG, "Starting replay generation for session: $sessionId")
         
         try {
@@ -117,8 +122,9 @@ class MediaPipelineUseCase @Inject constructor(
                 return@withContext Result.failure(IllegalStateException("Final video generation failed. Check logs."))
             }
             
+            val subtitleFile = createSubtitleFile(sessionId, audioFile, narrationAudio)
             Log.d(TAG, "🎉 Replay generation complete: ${finalVideo.absolutePath}")
-            return@withContext Result.success(finalVideo)
+            return@withContext Result.success(ReplayAssets(finalVideo, subtitleFile))
             
         } catch (e: Exception) {
             Log.e(TAG, "Pipeline failed", e)
@@ -162,7 +168,9 @@ class MediaPipelineUseCase @Inject constructor(
                 return@withContext Result.failure(IllegalStateException("Final video generation failed."))
             }
 
-            return@withContext Result.success(finalVideo)
+            val subtitleFile = createSubtitleFile(sessionId, audioFile, narrationAudio)
+            Log.d(TAG, "Replay generation (narration) complete: ${finalVideo.absolutePath}")
+            return@withContext Result.success(ReplayAssets(finalVideo, subtitleFile))
         } catch (e: Exception) {
             Log.e(TAG, "Pipeline failed (narration provided)", e)
             return@withContext Result.failure(e)
@@ -195,7 +203,57 @@ class MediaPipelineUseCase @Inject constructor(
         }
     }
 
-        private suspend fun buildFinalVideo(
+    private suspend fun createSubtitleFile(
+        sessionId: String,
+        audioLog: MediaLogEntity?,
+        fallbackAudio: File?
+    ): File? {
+        val audioSource = audioLog?.let { File(it.filePath) } ?: fallbackAudio
+        if (audioSource == null || !audioSource.exists()) {
+            Log.w(TAG, "Subtitle generation skipped: no audio source for $sessionId")
+            return null
+        }
+
+        val captions = geminiRepository.generateNoirCaptions(audioSource)
+        if (captions.isEmpty()) {
+            Log.d(TAG, "No captions generated for session $sessionId")
+            return null
+        }
+
+        val subtitleFile = File(context.filesDir, "replay_${sessionId}.srt")
+        subtitleFile.writeText(buildSrtText(captions))
+        localRepository.logMedia(
+            sessionId = sessionId,
+            type = MediaType.SUBTITLE,
+            filePath = subtitleFile.absolutePath
+        )
+        Log.d(TAG, "Subtitle saved: ${subtitleFile.name}")
+        return subtitleFile
+    }
+
+    private fun buildSrtText(captions: List<GeminiRepository.CaptionLine>): String {
+        return buildString {
+            captions.forEachIndexed { index, line ->
+                val startMs = line.startMs.coerceAtLeast(0L)
+                val endMs = maxOf(line.endMs, startMs + 1500L)
+                append("${index + 1}\n")
+                append("${formatSrtTimestamp(startMs)} --> ${formatSrtTimestamp(endMs)}\n")
+                append(line.text.replace("\n", " ").trim())
+                append("\n\n")
+            }
+        }
+    }
+
+    private fun formatSrtTimestamp(ms: Long): String {
+        val totalMs = ms.coerceAtLeast(0L)
+        val hours = totalMs / 3_600_000
+        val minutes = (totalMs % 3_600_000) / 60_000
+        val seconds = (totalMs % 60_000) / 1000
+        val milliseconds = totalMs % 1000
+        return String.format("%02d:%02d:%02d,%03d", hours, minutes, seconds, milliseconds)
+    }
+
+    private suspend fun buildFinalVideo(
         sessionId: String,
         videos: List<MediaLogEntity>,
         narrationAudio: File,

@@ -21,7 +21,7 @@ private const val TAG = "ReportDetailScreen"
 fun ReportDetailScreen(
     viewModel: GameResultViewModel = hiltViewModel(),
     sessionId: String = "last_session",
-    onNavigateToVideo: (String) -> Unit = {}
+    onNavigateToVideo: (String, String?) -> Unit = { _, _ -> }
 ) {
     Log.d(TAG, "ReportDetailScreen composable launched with sessionId: $sessionId")
     val uiState by viewModel.uiState.collectAsState()
@@ -82,6 +82,7 @@ fun ReportDetailScreen(
                         InvestigationReportView(
                             report = state.report,
                             videoPath = videoPath,
+                            subtitlePath = state.subtitlePath,
                             isPlaying = isPlaying,
                             isTtsLoading = isTtsLoading,
                             isReplayGenerating = state.isReplayGenerating,
@@ -94,7 +95,9 @@ fun ReportDetailScreen(
                                 """.trimIndent()
                                 viewModel.toggleNarration(textToRead)
                             },
-                            onVideoClick = onNavigateToVideo
+                            onVideoClick = { path, subtitle ->
+                                onNavigateToVideo(path, subtitle)
+                            }
                         )
                     } else {
                         RawTextFallbackView(state.rawText ?: "No evidence found.", state.logs)

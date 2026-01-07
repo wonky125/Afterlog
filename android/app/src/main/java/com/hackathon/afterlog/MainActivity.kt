@@ -60,7 +60,14 @@ class MainActivity : ComponentActivity() {
                             val sessionId = backStackEntry.arguments?.getString("sessionId") ?: "last_session"
                             ReportDetailScreen(
                                 sessionId = sessionId,
-                                onNavigateToVideo = { videoPath ->
+                                onNavigateToVideo = { videoPath, subtitlePath ->
+                                    navController.currentBackStackEntry?.savedStateHandle?.let { handle ->
+                                        if (subtitlePath != null) {
+                                            handle.set("subtitlePath", subtitlePath)
+                                        } else {
+                                            handle.remove<String>("subtitlePath")
+                                        }
+                                    }
                                     navController.navigate(Screen.VideoPlayer.createRoute(videoPath))
                                 }
                             )
@@ -69,8 +76,15 @@ class MainActivity : ComponentActivity() {
                             val videoPath = backStackEntry.arguments?.getString("videoPath") ?: ""
                             // Path was encoded, so decode it
                             val decodedPath = java.net.URLDecoder.decode(videoPath, "UTF-8")
+                            val subtitlePath = navController.previousBackStackEntry
+                                ?.savedStateHandle
+                                ?.get<String>("subtitlePath")
+                            navController.previousBackStackEntry
+                                ?.savedStateHandle
+                                ?.remove<String>("subtitlePath")
                             VideoPlayerScreen(
                                 videoPath = decodedPath,
+                                subtitlePath = subtitlePath,
                                 onBack = { navController.popBackStack() }
                             )
                         }

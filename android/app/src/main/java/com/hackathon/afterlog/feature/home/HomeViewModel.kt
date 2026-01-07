@@ -106,10 +106,11 @@ class HomeViewModel @Inject constructor(
             _testResult.value = "🔍 Analyzing Session: $sessionId..."
             
             val result = mediaPipelineUseCase.generateReplay(sessionId)
-            
+
             result.fold(
-                onSuccess = { videoFile ->
-                    _testResult.value = "✅ Replay Ready!\n${videoFile.absolutePath}"
+                onSuccess = { assets ->
+                    val subtitleInfo = assets.subtitleFile?.absolutePath ?: "No subtitles generated"
+                    _testResult.value = "✅ Replay Ready!\n${assets.videoFile.absolutePath}\nSubtitle: $subtitleInfo"
                 },
                 onFailure = { error ->
                     _testResult.value = "❌ Replay Generation Failed.\n${error.localizedMessage}"

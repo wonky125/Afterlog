@@ -372,7 +372,8 @@ class VideoStitcher @Inject constructor(
             val dataLen = pcmFile.length()
             // Check for potential overflow, though unlikely for mobile recordings (2GB limit for Wav)
             if (dataLen > Int.MAX_VALUE - 36) {
-                 Log.w(TAG, "PCM file too large for standard WAV header: $dataLen")
+                 Log.e(TAG, "PCM file too large for standard WAV header: $dataLen")
+                 return null
             }
             val totalDataLen = dataLen + 36
 

@@ -135,6 +135,7 @@ class GameResultViewModel @Inject constructor(
                     rawText = if (parsedReport == null) rawResponse else null,
                     logs = logs,
                     replayVideoPath = null,
+                    subtitlePath = null,
                     isReplayGenerating = parsedReport != null
                 )
 
@@ -148,12 +149,13 @@ class GameResultViewModel @Inject constructor(
                             narrationText = narrationText
                         )
 
-                        val replayPath = replayResult.getOrNull()?.absolutePath
-                        if (!replayPath.isNullOrBlank()) {
+                        val assets = replayResult.getOrNull()
+                        if (assets != null) {
                             val currentState = _uiState.value
                             if (currentState is ResultUiState.Success) {
                                 _uiState.value = currentState.copy(
-                                    replayVideoPath = replayPath,
+                                    replayVideoPath = assets.videoFile.absolutePath,
+                                    subtitlePath = assets.subtitleFile?.absolutePath,
                                     isReplayGenerating = false
                                 )
                             }
@@ -217,6 +219,7 @@ class GameResultViewModel @Inject constructor(
             rawText = null,
             logs = mockLogs,
             replayVideoPath = null,
+            subtitlePath = null,
             isReplayGenerating = false
         )
     }
@@ -230,6 +233,7 @@ sealed class ResultUiState {
         val rawText: String?,
         val logs: List<MediaLogEntity>,
         val replayVideoPath: String?,
+        val subtitlePath: String?,
         val isReplayGenerating: Boolean
     ) : ResultUiState()
     data class Error(val message: String) : ResultUiState()

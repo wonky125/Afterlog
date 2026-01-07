@@ -18,7 +18,7 @@ data class PerspectiveGuideConfig(
     }
 
     fun toSerializedString(): String {
-        return points.joinToString(separator = "|") { "${it.x},${it.y}" }
+        return points.joinToString(separator = "|") { "${it.x.coerceIn(0f, 1f)},${it.y.coerceIn(0f, 1f)}" }
     }
 
     companion object {

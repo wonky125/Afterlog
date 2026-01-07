@@ -15,6 +15,7 @@ import androidx.lifecycle.LifecycleService
 import androidx.lifecycle.lifecycleScope
 import com.hackathon.afterlog.MainActivity
 import com.hackathon.afterlog.R
+import com.hackathon.afterlog.data.model.PerspectiveGuideConfig
 import com.hackathon.afterlog.data.repository.LocalRepository
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Dispatchers
@@ -29,7 +30,9 @@ class AfterLogService : LifecycleService() {
         const val CHANNEL_ID = "afterlog_recording_channel"
         const val NOTIFICATION_ID = 1
         const val EXTRA_SESSION_ID = "session_id"
+        const val EXTRA_PERSPECTIVE_GUIDE = "perspective_guide_json"
         const val ACTION_SIMULATE_SCREAM = "com.hackathon.afterlog.action.SIMULATE_SCREAM"
+        const val ACTION_STOP_RECORDING = "com.hackathon.afterlog.action.STOP_RECORDING"
         private const val TAG = "AfterLogService"
     }
 
@@ -53,6 +56,7 @@ class AfterLogService : LifecycleService() {
 
     private var wakeLock: PowerManager.WakeLock? = null
     private var currentSessionId: String? = null
+    private var currentGuide: PerspectiveGuideConfig? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -74,19 +78,30 @@ class AfterLogService : LifecycleService() {
             startForegroundServiceWithNotification("Initializing AfterLog...")
         }
 
-        // 1. Handle Simulation Actions independently
-        if (intent.action == ACTION_SIMULATE_SCREAM) {
-            handleSimulateAction()
-            return START_STICKY
+        // 1. Handle Notification Actions before anything else
+        when (intent.action) {
+            ACTION_STOP_RECORDING -> {
+                Log.i(TAG, "Stop action received from notification")
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                stopSelf()
+                showToast("Recording stopped")
+                return START_NOT_STICKY
+            }
+            ACTION_SIMULATE_SCREAM -> {
+                handleSimulateAction()
+                return START_STICKY
+            }
         }
 
         // 2. Handle Session Initialization
+        val guideJson = intent.getStringExtra(EXTRA_PERSPECTIVE_GUIDE)
+        val guideConfig = PerspectiveGuideConfig.fromSerializedString(guideJson)
         val sessionId = intent.getStringExtra(EXTRA_SESSION_ID)
         if (sessionId.isNullOrEmpty()) {
             Log.w(TAG, "No sessionId provided; creating a new session in service")
             handleNewSession()
         } else {
-            handleResumeSession(sessionId)
+            handleResumeSession(sessionId, guideConfig)
         }
 
         return START_STICKY
@@ -110,18 +125,21 @@ class AfterLogService : LifecycleService() {
         Log.i(TAG, "Starting new session...")
         lifecycleScope.launch {
             val newSessionId = repository.startNewSession()
-            handleResumeSession(newSessionId)
+            handleResumeSession(newSessionId, null)
         }
     }
 
-    private fun handleResumeSession(sessionId: String) {
+    private fun handleResumeSession(sessionId: String, guide: PerspectiveGuideConfig?) {
         currentSessionId = sessionId
+        guide?.let {
+            currentGuide = it
+            videoManager.setPerspectiveGuide(it)
+        }
         startRecording(sessionId)
     }
 
     private fun startRecording(sessionId: String) {
-        // Update Notification to "Recording" state using UPDATE method, not startForeground
-        updateNotification("Listening for screams...")
+        updateNotification("Recording active — screen may sleep safely")
 
         // Acquire WakeLock (Safety: 1 hour timeout to prevent infinite battery drain)
         acquireWakeLock()
@@ -169,6 +187,8 @@ class AfterLogService : LifecycleService() {
 
         // Start Photo Timelapse (if needed, CameraManager logic)
         cameraManager.startCapturing(sessionId, lifecycleScope)
+
+        showToast("Layout confirmed. You may dim the display; recording continues.")
 
         Log.i(TAG, "Recording started for session: $sessionId")
     }
@@ -262,13 +282,28 @@ class AfterLogService : LifecycleService() {
             PendingIntent.FLAG_IMMUTABLE
         )
 
+        val stopIntent = buildStopPendingIntent()
+
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("AfterLog Recording")
             .setContentText(contentText)
             .setSmallIcon(R.drawable.ic_notification_record)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
+            .addAction(R.drawable.ic_notification_record, "Stop Recording", stopIntent)
             .build()
+    }
+
+    private fun buildStopPendingIntent(): PendingIntent {
+        val stopIntent = Intent(this, AfterLogService::class.java).apply {
+            action = ACTION_STOP_RECORDING
+        }
+        return PendingIntent.getService(
+            this,
+            0,
+            stopIntent,
+            PendingIntent.FLAG_IMMUTABLE
+        )
     }
 
     private fun acquireWakeLock() {
