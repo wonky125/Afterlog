@@ -3,6 +3,7 @@ package com.hackathon.afterlog.feature.home
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hackathon.afterlog.data.repository.GeminiRepository
+import com.hackathon.afterlog.data.repository.LocalRepository
 import com.hackathon.afterlog.domain.VideoSynthesisTestHelper
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -18,6 +19,7 @@ import androidx.annotation.OptIn
 @HiltViewModel
 class HomeViewModel @Inject constructor(
     private val geminiRepository: GeminiRepository,
+    private val localRepository: LocalRepository,
     private val videoTestHelper: VideoSynthesisTestHelper,
     private val mediaPipelineUseCase: com.hackathon.afterlog.domain.MediaPipelineUseCase
 ) : ViewModel() {
@@ -86,4 +88,9 @@ class HomeViewModel @Inject constructor(
             _isTesting.value = false
         }
     }
+
+    suspend fun createNewSession(): String {
+        return localRepository.startNewSession()
+    }
+
 }

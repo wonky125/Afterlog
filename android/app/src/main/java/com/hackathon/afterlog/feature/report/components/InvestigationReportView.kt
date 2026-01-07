@@ -27,7 +27,9 @@ fun InvestigationReportView(
     videoPath: String? = null,
     isPlaying: Boolean = false,
     isTtsLoading: Boolean = false,
-    onPlayClick: () -> Unit = {}
+    isReplayGenerating: Boolean = false,
+    onPlayClick: () -> Unit = {},
+    onVideoClick: (String) -> Unit = {}
 ) {
     Box(modifier = Modifier.fillMaxSize()) {
         NoirSurface {
@@ -90,9 +92,10 @@ fun InvestigationReportView(
                         NoirSectionHeader("MOVING PICTURE EVIDENCE")
                         // Simplified Video Placeholder / Launcher
                         NoirButton(
-                            text = "PLAY REEL",
-                            onClick = { /* TODO: Launch Video Player */ },
-                            modifier = Modifier.fillMaxWidth()
+                            text = if (isReplayGenerating) "GENERATING..." else "PLAY REEL",
+                            onClick = { onVideoClick(videoPath) },
+                            modifier = Modifier.fillMaxWidth(),
+                            enabled = !isReplayGenerating
                         )
                         Spacer(modifier = Modifier.height(24.dp))
                     }

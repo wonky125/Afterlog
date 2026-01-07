@@ -11,6 +11,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -32,6 +33,7 @@ fun HomeScreen(
     viewModel: HomeViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var hasPermissions by remember { mutableStateOf(checkPermissions(context)) }
 
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -118,13 +120,22 @@ fun HomeScreen(
                     NoirButton(
                         text = "START ARCHIVE",
                         onClick = {
-                            val intent = Intent(context, AfterLogService::class.java)
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                                context.startForegroundService(intent)
-                            } else {
-                                context.startService(intent)
+                            scope.launch {
+                                try {
+                                    val sessionId = viewModel.createNewSession()
+                                    val intent = Intent(context, AfterLogService::class.java).apply {
+                                        putExtra(AfterLogService.EXTRA_SESSION_ID, sessionId)
+                                    }
+                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                        context.startForegroundService(intent)
+                                    } else {
+                                        context.startService(intent)
+                                    }
+                                    Toast.makeText(context, "Archive Started", Toast.LENGTH_SHORT).show()
+                                } catch (e: Exception) {
+                                    Toast.makeText(context, "Failed to start session: ${e.message}", Toast.LENGTH_LONG).show()
+                                }
                             }
-                            Toast.makeText(context, "Archive Started", Toast.LENGTH_SHORT).show()
                         },
                         modifier = Modifier.weight(1f)
                     )

@@ -85,6 +85,7 @@ class AudioMonitor @Inject constructor(
                 cleanup()
                 return
             }
+            Log.d(TAG, "PCM target path=${pcmFile?.absolutePath}, exists=${pcmFile?.exists()}")
             
             // Start Recording
             try {

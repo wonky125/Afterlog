@@ -10,11 +10,15 @@ import androidx.media3.transformer.EditedMediaItemSequence
 import androidx.media3.transformer.ExportException
 import androidx.media3.transformer.ExportResult
 import androidx.media3.transformer.Transformer
+import androidx.media3.common.C
+import androidx.media3.common.MediaItem.ClippingConfiguration
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.io.FileInputStream
+import java.io.FileOutputStream
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.coroutines.resume
@@ -33,6 +37,8 @@ import kotlin.coroutines.resumeWithException
 class VideoStitcher @Inject constructor(
     @ApplicationContext private val context: Context
 ) {
+    data class AudioClip(val startMs: Long, val durationMs: Long)
+
     companion object {
         private const val TAG = "VideoStitcher"
     }
@@ -110,6 +116,119 @@ class VideoStitcher @Inject constructor(
             Result.failure(e)
         }
     }
+
+    /**
+     * Concatenates video clips and overlays a clipped portion of a long audio file (e.g., PCM).
+     * Audio is clipped to [audioClipStartMs, audioClipEndMs] before overlay.
+     */
+    suspend fun stitchVideosWithAudioClip(
+        videoChunks: List<File>,
+        audioFile: File,
+        audioClipStartMs: Long,
+        audioClipEndMs: Long,
+        outputSessionId: String
+    ): Result<File> = withContext(Dispatchers.IO) {
+        
+        if (videoChunks.isEmpty()) {
+            return@withContext Result.failure(
+                IllegalArgumentException("No video chunks provided for stitching")
+            )
+        }
+        
+        val validVideos = videoChunks.filter { it.exists() && it.length() > 0 }
+        if (validVideos.isEmpty()) {
+            return@withContext Result.failure(
+                IllegalArgumentException("No valid video files found")
+            )
+        }
+
+        val playableAudio = ensurePlayableAudioFile(audioFile)
+        Log.d(TAG, "Stitch (with clipped audio): ${validVideos.size} videos, audio=${playableAudio.name}, window=$audioClipStartMs-$audioClipEndMs")
+
+        val outputFile = File(context.filesDir, "stitched_replay_$outputSessionId.mp4")
+        if (outputFile.exists()) outputFile.delete()
+
+        try {
+            val videoSequence = buildVideoSequence(validVideos)
+            Log.d(TAG, "videoChunks=${videoChunks.size}, audio=${playableAudio.name}, clip=$audioClipStartMs-$audioClipEndMs")
+            val audioSequence = buildClippedAudioSequence(playableAudio, audioClipStartMs, audioClipEndMs)
+
+            val composition = Composition.Builder(listOf(videoSequence, audioSequence)).build()
+
+            val result = try {
+                executeTransformation(composition, outputFile)
+            } finally {
+                // Cleanup
+            }
+
+            if (result.isSuccess && outputFile.exists()) {
+                Log.d(TAG, "??Stitch (clipped audio) complete: ${outputFile.absolutePath}")
+                Result.success(outputFile)
+            } else {
+                Result.failure(result.exceptionOrNull() ?: Exception("Unknown stitching error"))
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Stitching (clipped audio) failed", e)
+            outputFile.delete()
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Concatenates video clips and overlays audio clips aligned to each segment.
+     * The audio file is a single continuous recording; clips are pulled per segment.
+     */
+    suspend fun stitchVideosWithAudioSegments(
+        videoChunks: List<File>,
+        audioFile: File,
+        audioStartOffsetMs: Long,
+        audioClips: List<AudioClip>,
+        outputSessionId: String
+    ): Result<File> = withContext(Dispatchers.IO) {
+        if (videoChunks.isEmpty()) {
+            return@withContext Result.failure(
+                IllegalArgumentException("No video chunks provided for stitching")
+            )
+        }
+
+        val validVideos = videoChunks.filter { it.exists() && it.length() > 0 }
+        if (validVideos.isEmpty()) {
+            return@withContext Result.failure(
+                IllegalArgumentException("No valid video files found")
+            )
+        }
+
+        if (audioClips.isEmpty()) {
+            return@withContext Result.failure(
+                IllegalArgumentException("No audio clips provided for stitching")
+            )
+        }
+
+        val playableAudio = ensurePlayableAudioFile(audioFile)
+        Log.d(TAG, "Stitch (audio segments): videos=${validVideos.size}, clips=${audioClips.size}, startOffset=$audioStartOffsetMs, audio=${playableAudio.name}")
+
+        val outputFile = File(context.filesDir, "stitched_replay_$outputSessionId.mp4")
+        if (outputFile.exists()) outputFile.delete()
+
+        try {
+            val videoSequence = buildVideoSequence(validVideos)
+            val audioSequence = buildAudioSequenceFromClips(playableAudio, audioStartOffsetMs, audioClips)
+
+            val composition = Composition.Builder(listOf(videoSequence, audioSequence)).build()
+            val result = executeTransformation(composition, outputFile)
+
+            if (result.isSuccess && outputFile.exists()) {
+                Log.d(TAG, "Stitch (audio segments) complete: ${outputFile.absolutePath}")
+                Result.success(outputFile)
+            } else {
+                Result.failure(result.exceptionOrNull() ?: Exception("Unknown stitching error"))
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Stitching (audio segments) failed", e)
+            outputFile.delete()
+            Result.failure(e)
+        }
+    }
     
     /**
      * Builds a video sequence from multiple files for concatenation.
@@ -131,6 +250,66 @@ class VideoStitcher @Inject constructor(
             .setRemoveVideo(true) // Keep only audio track
             .build()
         return EditedMediaItemSequence(listOf(editedItem))
+    }
+
+    /**
+     * Builds an audio-only sequence clipped to a specific window.
+     */
+    private fun buildClippedAudioSequence(
+        audioFile: File,
+        startMs: Long,
+        endMs: Long
+    ): EditedMediaItemSequence {
+        val clipping = ClippingConfiguration.Builder()
+            .setStartPositionMs(startMs.coerceAtLeast(0))
+            .setEndPositionMs(if (endMs > 0) endMs else C.TIME_END_OF_SOURCE)
+            .build()
+
+        val mediaItem = MediaItem.Builder()
+            .setUri(audioFile.toURI().toString())
+            .setClippingConfiguration(clipping)
+            .build()
+
+        val editedItem = EditedMediaItem.Builder(mediaItem)
+            .setRemoveVideo(true)
+            .build()
+
+        return EditedMediaItemSequence(listOf(editedItem))
+    }
+
+    private fun buildAudioSequenceFromClips(
+        audioFile: File,
+        audioStartOffsetMs: Long,
+        clips: List<AudioClip>
+    ): EditedMediaItemSequence {
+        val editedItems = clips.mapNotNull { clip ->
+            val rawStart = clip.startMs - audioStartOffsetMs
+            val trimMs = if (rawStart < 0) -rawStart else 0L
+            val clipStart = rawStart.coerceAtLeast(0)
+            val clipDuration = (clip.durationMs - trimMs).coerceAtLeast(0)
+            val clipEnd = clipStart + clipDuration
+
+            if (clipDuration <= 0) {
+                Log.w(TAG, "Skipping audio clip: start=${clip.startMs} duration=${clip.durationMs}")
+                return@mapNotNull null
+            }
+
+            val clipping = ClippingConfiguration.Builder()
+                .setStartPositionMs(clipStart)
+                .setEndPositionMs(clipEnd)
+                .build()
+
+            val mediaItem = MediaItem.Builder()
+                .setUri(audioFile.toURI().toString())
+                .setClippingConfiguration(clipping)
+                .build()
+
+            EditedMediaItem.Builder(mediaItem)
+                .setRemoveVideo(true)
+                .build()
+        }
+
+        return EditedMediaItemSequence(editedItems)
     }
     
     /**
@@ -176,6 +355,102 @@ class VideoStitcher @Inject constructor(
         
         continuation.invokeOnCancellation {
             transformer.cancel()
+        }
+    }
+
+    private fun ensurePlayableAudioFile(audioFile: File): File {
+        if (audioFile.extension.equals("pcm", ignoreCase = true)) {
+            val wavFile = File(audioFile.parent, "${audioFile.nameWithoutExtension}_converted.wav")
+            return convertPcmToWav(audioFile, wavFile) ?: audioFile
+        }
+        return audioFile
+    }
+
+    private fun convertPcmToWav(pcmFile: File, wavFile: File): File? {
+        return try {
+            if (wavFile.exists()) wavFile.delete()
+
+            val sampleRate = 16000
+            val channels = 1
+            val byteRate = sampleRate * channels * 2
+            val dataLen = pcmFile.length()
+            val totalDataLen = dataLen + 36
+
+            val header = ByteArray(44)
+            header[0] = 'R'.code.toByte()
+            header[1] = 'I'.code.toByte()
+            header[2] = 'F'.code.toByte()
+            header[3] = 'F'.code.toByte()
+
+            header[4] = (totalDataLen and 0xff).toByte()
+            header[5] = ((totalDataLen shr 8) and 0xff).toByte()
+            header[6] = ((totalDataLen shr 16) and 0xff).toByte()
+            header[7] = ((totalDataLen shr 24) and 0xff).toByte()
+
+            header[8] = 'W'.code.toByte()
+            header[9] = 'A'.code.toByte()
+            header[10] = 'V'.code.toByte()
+            header[11] = 'E'.code.toByte()
+
+            header[12] = 'f'.code.toByte()
+            header[13] = 'm'.code.toByte()
+            header[14] = 't'.code.toByte()
+            header[15] = ' '.code.toByte()
+
+            header[16] = 16
+            header[17] = 0
+            header[18] = 0
+            header[19] = 0
+
+            header[20] = 1
+            header[21] = 0
+
+            header[22] = channels.toByte()
+            header[23] = 0
+
+            header[24] = (sampleRate and 0xff).toByte()
+            header[25] = ((sampleRate shr 8) and 0xff).toByte()
+            header[26] = ((sampleRate shr 16) and 0xff).toByte()
+            header[27] = ((sampleRate shr 24) and 0xff).toByte()
+
+            header[28] = (byteRate and 0xff).toByte()
+            header[29] = ((byteRate shr 8) and 0xff).toByte()
+            header[30] = ((byteRate shr 16) and 0xff).toByte()
+            header[31] = ((byteRate shr 24) and 0xff).toByte()
+
+            header[32] = (channels * 2).toByte()
+            header[33] = 0
+
+            header[34] = 16
+            header[35] = 0
+
+            header[36] = 'd'.code.toByte()
+            header[37] = 'a'.code.toByte()
+            header[38] = 't'.code.toByte()
+            header[39] = 'a'.code.toByte()
+
+            header[40] = (dataLen and 0xff).toByte()
+            header[41] = ((dataLen shr 8) and 0xff).toByte()
+            header[42] = ((dataLen shr 16) and 0xff).toByte()
+            header[43] = ((dataLen shr 24) and 0xff).toByte()
+
+            FileOutputStream(wavFile).use { out ->
+                out.write(header)
+                FileInputStream(pcmFile).use { input ->
+                    val buffer = ByteArray(16 * 1024)
+                    while (true) {
+                        val read = input.read(buffer)
+                        if (read <= 0) break
+                        out.write(buffer, 0, read)
+                    }
+                }
+            }
+
+            Log.d(TAG, "PCM converted to WAV: ${wavFile.absolutePath}")
+            wavFile
+        } catch (e: Exception) {
+            Log.e(TAG, "PCM to WAV conversion failed", e)
+            null
         }
     }
     

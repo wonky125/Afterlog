@@ -26,7 +26,6 @@ object DatabaseModule {
             AppDatabase::class.java,
             "afterlog_db"
         )
-        .fallbackToDestructiveMigration() // ê°œë°œ ì¤??¸ì˜ë¥??„í•´ ë§ˆì´ê·¸ë ˆ?´ì…˜ ?¤íŒ¨ ??DB ì´ˆê¸°??(?„ë¡œ?•ì…˜?ì„œ??ì£¼ì˜)
         .build()
     }
 

@@ -83,6 +83,7 @@ class AfterLogService : LifecycleService() {
         // 2. Handle Session Initialization
         val sessionId = intent.getStringExtra(EXTRA_SESSION_ID)
         if (sessionId.isNullOrEmpty()) {
+            Log.w(TAG, "No sessionId provided; creating a new session in service")
             handleNewSession()
         } else {
             handleResumeSession(sessionId)

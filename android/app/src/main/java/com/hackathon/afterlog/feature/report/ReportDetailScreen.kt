@@ -20,7 +20,8 @@ private const val TAG = "ReportDetailScreen"
 @Composable
 fun ReportDetailScreen(
     viewModel: GameResultViewModel = hiltViewModel(),
-    sessionId: String = "last_session"
+    sessionId: String = "last_session",
+    onNavigateToVideo: (String) -> Unit = {}
 ) {
     Log.d(TAG, "ReportDetailScreen composable launched with sessionId: $sessionId")
     val uiState by viewModel.uiState.collectAsState()
@@ -73,16 +74,17 @@ fun ReportDetailScreen(
                         val isPlaying by viewModel.isPlaying.collectAsState()
                         val isTtsLoading by viewModel.isTtsLoading.collectAsState()
 
-                        // Find first highlight video
-                        val videoPath = state.logs
-                            .find { it.filePath.contains("highlight") && java.io.File(it.filePath).exists() }
-                            ?.filePath
+                        val videoPath = state.replayVideoPath
+                            ?: state.logs
+                                .find { it.filePath.contains("highlight") && java.io.File(it.filePath).exists() }
+                                ?.filePath
 
                         InvestigationReportView(
                             report = state.report,
                             videoPath = videoPath,
                             isPlaying = isPlaying,
                             isTtsLoading = isTtsLoading,
+                            isReplayGenerating = state.isReplayGenerating,
                             onPlayClick = {
                                 val textToRead = """
                                     ${state.report.headline}. 
@@ -91,7 +93,8 @@ fun ReportDetailScreen(
                                     Verdict: ${state.report.verdict}
                                 """.trimIndent()
                                 viewModel.toggleNarration(textToRead)
-                            }
+                            },
+                            onVideoClick = onNavigateToVideo
                         )
                     } else {
                         RawTextFallbackView(state.rawText ?: "No evidence found.", state.logs)

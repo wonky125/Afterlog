@@ -10,6 +10,7 @@ import com.hackathon.afterlog.data.model.TimelineEvent
 import com.hackathon.afterlog.data.repository.GeminiRepository
 import com.hackathon.afterlog.data.repository.LocalRepository
 import com.hackathon.afterlog.data.repository.TtsRepository
+import com.hackathon.afterlog.domain.MediaPipelineUseCase
 import com.hackathon.afterlog.service.AudioPlayerManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -26,6 +27,7 @@ class GameResultViewModel @Inject constructor(
     private val geminiRepository: GeminiRepository,
     private val localRepository: LocalRepository,
     private val ttsRepository: TtsRepository,
+    private val mediaPipelineUseCase: MediaPipelineUseCase,
     private val audioPlayerManager: AudioPlayerManager
 ) : ViewModel() {
 
@@ -131,8 +133,36 @@ class GameResultViewModel @Inject constructor(
                 _uiState.value = ResultUiState.Success(
                     report = parsedReport,
                     rawText = if (parsedReport == null) rawResponse else null,
-                    logs = logs
+                    logs = logs,
+                    replayVideoPath = null,
+                    isReplayGenerating = parsedReport != null
                 )
+
+                if (parsedReport != null) {
+                    val replaySessionId = logs.firstOrNull()?.sessionId ?: sessionId
+                    val narrationText = buildNarrationText(parsedReport)
+
+                    viewModelScope.launch {
+                        val replayResult = mediaPipelineUseCase.generateReplayWithNarration(
+                            sessionId = replaySessionId,
+                            narrationText = narrationText
+                        )
+
+                        val replayPath = replayResult.getOrNull()?.absolutePath
+                        if (!replayPath.isNullOrBlank()) {
+                            val currentState = _uiState.value
+                            if (currentState is ResultUiState.Success) {
+                                _uiState.value = currentState.copy(
+                                    replayVideoPath = replayPath,
+                                    isReplayGenerating = false
+                                )
+                            }
+                        } else if (_uiState.value is ResultUiState.Success) {
+                            val current = _uiState.value as ResultUiState.Success
+                            _uiState.value = current.copy(isReplayGenerating = false)
+                        }
+                    }
+                }
             } catch (e: Exception) {
                 Log.e("GameResultVM", "Error in loadSessionData", e)
                 _uiState.value = ResultUiState.Error("Error: ${e.message}")
@@ -166,6 +196,15 @@ class GameResultViewModel @Inject constructor(
         }
     }
 
+    private fun buildNarrationText(report: GeminiReport): String {
+        return """
+            ${report.headline}.
+            ${report.summary}.
+            ${report.article}.
+            Verdict: ${report.verdict}
+        """.trimIndent()
+    }
+
     /**
      * For Debug Mode: Directly inject mock data into the UI state
      */
@@ -176,7 +215,9 @@ class GameResultViewModel @Inject constructor(
         _uiState.value = ResultUiState.Success(
             report = mockReport,
             rawText = null,
-            logs = mockLogs
+            logs = mockLogs,
+            replayVideoPath = null,
+            isReplayGenerating = false
         )
     }
 }
@@ -187,7 +228,9 @@ sealed class ResultUiState {
     data class Success(
         val report: GeminiReport?,
         val rawText: String?,
-        val logs: List<MediaLogEntity>
+        val logs: List<MediaLogEntity>,
+        val replayVideoPath: String?,
+        val isReplayGenerating: Boolean
     ) : ResultUiState()
     data class Error(val message: String) : ResultUiState()
 }

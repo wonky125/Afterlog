@@ -36,6 +36,10 @@ class LocalRepository @Inject constructor(
     suspend fun getSessionById(sessionId: String): SessionEntity? {
         return sessionDao.getSessionById(sessionId)
     }
+    
+    suspend fun getSessionStartTime(sessionId: String): Long? {
+        return sessionDao.getSessionById(sessionId)?.startTime
+    }
 
     // Log Operations
     suspend fun logMedia(
@@ -62,11 +66,15 @@ class LocalRepository @Inject constructor(
     suspend fun getSessionLogs(sessionId: String): List<MediaLogEntity> {
         val targetId = if (sessionId == "last_session") {
             try {
-                // Determine the actual last session
-                val lastSession = sessionDao.getLastSession()
-                lastSession?.id ?: sessionId
+                // Prefer the most recent session that actually has logs.
+                val lastLoggedSessionId = logDao.getLastLoggedSessionId()
+                if (!lastLoggedSessionId.isNullOrBlank()) {
+                    lastLoggedSessionId
+                } else {
+                    val lastSession = sessionDao.getLastSession()
+                    lastSession?.id ?: sessionId
+                }
             } catch (e: Exception) {
-                // Fallback or log error if DAO method missing
                 sessionId
             }
         } else {

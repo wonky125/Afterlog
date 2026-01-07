@@ -10,6 +10,7 @@ import com.hackathon.afterlog.data.repository.GeminiRepository
 import com.hackathon.afterlog.data.repository.LocalRepository
 import com.hackathon.afterlog.data.repository.TtsRepository
 import com.hackathon.afterlog.data.local.entities.MediaType
+import com.hackathon.afterlog.data.local.entities.MediaLogEntity
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -56,12 +57,13 @@ class MediaPipelineUseCase @Inject constructor(
      * @return Result<File> containing the generated MP4 file or error info
      */
     suspend fun generateReplay(sessionId: String): Result<File> = withContext(Dispatchers.IO) {
-        Log.d(TAG, "🎬 Starting replay generation for session: $sessionId")
+        Log.d(TAG, "Starting replay generation for session: $sessionId")
         
         try {
             // Step 1: Fetch media from database
             val videos = localRepository.getVideosBySession(sessionId)
             val audioFile = localRepository.getAudioFileBySession(sessionId)
+            val sessionStart = localRepository.getSessionStartTime(sessionId)
             
             if (videos.isEmpty() && audioFile == null) {
                 Log.w(TAG, "No media found for session $sessionId")
@@ -108,50 +110,8 @@ class MediaPipelineUseCase @Inject constructor(
             
             Log.d(TAG, "✅ TTS complete: ${narrationAudio.length()} bytes")
             
-            // Step 5: Determine video generation strategy (Hybrid Mode)
-            // Priority: VIDEO_HIGHLIGHT clips > VIDEO_CHUNK > Image Slideshow
-            val highlightVideos = videos.filter { it.type == MediaType.VIDEO_HIGHLIGHT }
-            val allVideoFiles = videos.map { File(it.filePath) }.filter { it.exists() }
-            
-            Log.d(TAG, "📊 Hybrid Mode: ${highlightVideos.size} highlights, ${allVideoFiles.size} total videos")
-            
-            val finalVideo: File? = when {
-                // Case A: We have highlight clips -> Stitch real video with TTS overlay
-                highlightVideos.isNotEmpty() -> {
-                    Log.d(TAG, "🎬 Using VideoStitcher for ${highlightVideos.size} highlight clips")
-                    val highlightFiles = highlightVideos.map { File(it.filePath) }.filter { it.exists() }
-                    
-                    val stitchResult = videoStitcher.stitchVideos(
-                        videoChunks = highlightFiles,
-                        narrationAudio = narrationAudio,
-                        outputSessionId = sessionId
-                    )
-                    
-                    stitchResult.getOrNull()
-                }
-                
-                // Case B: No highlights, but we have video chunks -> Extract keyframes for slideshow
-                allVideoFiles.isNotEmpty() -> {
-                    Log.d(TAG, "🖼️ Using VideoSynthesizer slideshow (no highlights)")
-                    val keyframes = extractKeyframesFromVideos(allVideoFiles)
-                    
-                    if (keyframes.isEmpty()) {
-                        Log.w(TAG, "No keyframes extracted from video chunks")
-                        null
-                    } else {
-                        videoSynthesizer.synthesize(
-                            outputSessionId = sessionId,
-                            audioFile = narrationAudio,
-                            images = keyframes,
-                            imageDurationSec = 5
-                        )
-                    }
-                }
-                
-                // Case C: No video at all -> Should not reach here due to earlier check
-                else -> null
-            }
-            
+            val finalVideo = buildFinalVideo(sessionId, videos, narrationAudio, audioFile, sessionStart)
+
             if (finalVideo == null || !finalVideo.exists()) {
                 Log.e(TAG, "Video generation failed (both stitcher and synthesizer)")
                 return@withContext Result.failure(IllegalStateException("Final video generation failed. Check logs."))
@@ -162,6 +122,49 @@ class MediaPipelineUseCase @Inject constructor(
             
         } catch (e: Exception) {
             Log.e(TAG, "Pipeline failed", e)
+            return@withContext Result.failure(e)
+        }
+    }
+
+    /**
+     * Generates a cinematic replay MP4 using an already-built narration text.
+     */
+    suspend fun generateReplayWithNarration(
+        sessionId: String,
+        narrationText: String
+    ): Result<File> = withContext(Dispatchers.IO) {
+        Log.d(TAG, "Starting replay generation (narration provided) for session: $sessionId")
+
+        try {
+            if (narrationText.isBlank()) {
+                return@withContext Result.failure(IllegalArgumentException("Narration text is empty."))
+            }
+
+            val videos = localRepository.getVideosBySession(sessionId)
+            val audioFile = localRepository.getAudioFileBySession(sessionId)
+            val sessionStart = localRepository.getSessionStartTime(sessionId)
+
+            if (videos.isEmpty() && audioFile == null) {
+                return@withContext Result.failure(IllegalStateException("No media found for session $sessionId."))
+            }
+
+            val narrationAudio = ttsRepository.synthesizeText(
+                text = narrationText,
+                filename = "narration_$sessionId.mp3"
+            )
+
+            if (narrationAudio == null || !narrationAudio.exists()) {
+                return@withContext Result.failure(IllegalStateException("TTS Synthesis failed."))
+            }
+
+            val finalVideo = buildFinalVideo(sessionId, videos, narrationAudio, audioFile, sessionStart)
+            if (finalVideo == null || !finalVideo.exists()) {
+                return@withContext Result.failure(IllegalStateException("Final video generation failed."))
+            }
+
+            return@withContext Result.success(finalVideo)
+        } catch (e: Exception) {
+            Log.e(TAG, "Pipeline failed (narration provided)", e)
             return@withContext Result.failure(e)
         }
     }
@@ -191,8 +194,74 @@ class MediaPipelineUseCase @Inject constructor(
             ""
         }
     }
-    
-    /**
+
+        private suspend fun buildFinalVideo(
+        sessionId: String,
+        videos: List<MediaLogEntity>,
+        narrationAudio: File,
+        audioLog: MediaLogEntity?,
+        sessionStart: Long?
+    ): File? {
+        val highlightVideos = videos.filter { it.type == MediaType.VIDEO_HIGHLIGHT }
+        val allVideoFiles = videos.map { File(it.filePath) }.filter { it.exists() }
+
+        Log.d(TAG, "Hybrid Mode: ${highlightVideos.size} highlights, ${allVideoFiles.size} total videos")
+
+        Log.d(TAG, "Segments: highlights=${highlightVideos.size}, totalVideoFiles=${allVideoFiles.size}")
+        return when {
+            highlightVideos.isNotEmpty() -> {
+                val segments = buildVideoSegments(highlightVideos, sessionStart)
+                Log.d(TAG, "Video segments=${segments.size}, sessionStart=$sessionStart")
+                val highlightFiles = segments.map { it.file }.filter { it.exists() }
+                val pcmFile = audioLog?.let { File(it.filePath) }?.takeIf { it.exists() }
+
+                val audioStartOffsetMs = if (audioLog != null && sessionStart != null) {
+                    (audioLog.timestamp - sessionStart).coerceAtLeast(0)
+                } else {
+                    null
+                }
+
+                val stitchResult = if (pcmFile != null && segments.isNotEmpty() && audioStartOffsetMs != null) {
+                    val clips = segments.map { VideoStitcher.AudioClip(startMs = it.startMs, durationMs = it.durationMs) }
+                    Log.d(TAG, "Audio clips=${clips.size} startOffset=$audioStartOffsetMs pcmPath=${pcmFile.absolutePath}")
+                    videoStitcher.stitchVideosWithAudioSegments(
+                        videoChunks = highlightFiles,
+                        audioFile = pcmFile,
+                        audioStartOffsetMs = audioStartOffsetMs,
+                        audioClips = clips,
+                        outputSessionId = sessionId
+                    )
+                } else {
+                    videoStitcher.stitchVideos(
+                        videoChunks = highlightFiles,
+                        narrationAudio = narrationAudio,
+                        outputSessionId = sessionId
+                    )
+                }
+
+                stitchResult.getOrNull()
+            }
+            allVideoFiles.isNotEmpty() -> {
+                Log.d(TAG, "Using VideoSynthesizer slideshow (no highlights)")
+                val keyframes = extractKeyframesFromVideos(allVideoFiles)
+
+                if (keyframes.isEmpty()) {
+                    Log.w(TAG, "No keyframes extracted from video chunks")
+                    null
+                } else {
+                    videoSynthesizer.synthesize(
+                        outputSessionId = sessionId,
+                        audioFile = narrationAudio,
+                        images = keyframes,
+                        imageDurationSec = 5
+                    )
+                }
+            }
+            else -> null
+        }
+    }
+
+/**
      * Extracts keyframes from video files using MediaMetadataRetriever.
      * Takes the frame at 1 second mark (or 0 if short).
      */
@@ -224,6 +293,42 @@ class MediaPipelineUseCase @Inject constructor(
         }
         
         return extractedImages
+    }
+    
+    private data class VideoSegment(
+        val file: File,
+        val startMs: Long,
+        val durationMs: Long
+    )
+
+    private fun buildVideoSegments(
+        highlights: List<MediaLogEntity>,
+        sessionStart: Long?
+    ): List<VideoSegment> {
+        val segments = mutableListOf<VideoSegment>()
+        for (log in highlights) {
+            val file = File(log.filePath)
+            if (!file.exists()) continue
+
+            val durationMs = try {
+                val retriever = MediaMetadataRetriever()
+                retriever.setDataSource(file.absolutePath)
+                val dur = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+                retriever.release()
+                dur
+            } catch (e: Exception) {
+                0L
+            }
+
+            val startMs = if (sessionStart != null) {
+                (log.timestamp - sessionStart).coerceAtLeast(0)
+            } else {
+                0L
+            }
+
+            segments.add(VideoSegment(file = file, startMs = startMs, durationMs = durationMs))
+        }
+        return segments.sortedBy { it.startMs }
     }
     
     companion object {
