@@ -2,7 +2,6 @@ package com.hackathon.afterlog.service
 
 import android.content.Context
 import android.util.Log
-import android.os.Build
 import android.view.OrientationEventListener
 import android.view.Surface
 import android.view.WindowManager
@@ -163,18 +162,11 @@ class CameraUseCaseManager @Inject constructor(
     }
 
     private fun getDisplayRotation(): Int {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            val rotation = context.display?.rotation
-            if (rotation == null) {
-                Log.w(TAG, "Display rotation unavailable, defaulting to ROTATION_0")
-            }
-            return rotation ?: Surface.ROTATION_0
-        }
         val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as? WindowManager
         @Suppress("DEPRECATION")
         val rotation = windowManager?.defaultDisplay?.rotation
         if (rotation == null) {
-            Log.w(TAG, "DefaultDisplay rotation unavailable, defaulting to ROTATION_0")
+            Log.w(TAG, "Display rotation unavailable, defaulting to ROTATION_0")
         }
         return rotation ?: Surface.ROTATION_0
     }

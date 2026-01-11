@@ -662,7 +662,7 @@ class VideoStitcher @Inject constructor(
                 )
             }
         }.sortedBy { it.startMs }
-        private var lastIndex = -1
+        @Volatile private var lastIndex = -1
 
         private val overlaySettings = OverlaySettings.Builder()
             .setBackgroundFrameAnchor(0f, -0.6f)
