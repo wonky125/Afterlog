@@ -12,6 +12,7 @@ import com.hackathon.afterlog.data.repository.LocalRepository
 import com.hackathon.afterlog.data.repository.TtsRepository
 import com.hackathon.afterlog.data.local.entities.MediaType
 import com.hackathon.afterlog.data.local.entities.MediaLogEntity
+import com.hackathon.afterlog.data.model.HighlightSegment
 import com.hackathon.afterlog.data.model.PerspectiveGuideConfig
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -19,10 +20,14 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.doubleOrNull
+import kotlinx.serialization.json.jsonArray
 import java.io.File
 import java.io.FileOutputStream
+import java.util.Locale
 import javax.inject.Inject
 import javax.inject.Singleton
+import com.hackathon.afterlog.data.util.GeminiJsonUtils
 import androidx.media3.common.util.UnstableApi
 import kotlin.math.abs
 
@@ -77,6 +82,8 @@ class MediaPipelineUseCase @Inject constructor(
             val videos = localRepository.getVideosBySession(sessionId)
             val audioFile = localRepository.getAudioFileBySession(sessionId)
             val sessionStart = localRepository.getSessionStartTime(sessionId)
+
+            validateTimelineAlignment(sessionId, videos, audioFile, sessionStart)
             
             if (videos.isEmpty() && audioFile == null) {
                 Log.w(TAG, "No media found for session $sessionId")
@@ -106,6 +113,8 @@ class MediaPipelineUseCase @Inject constructor(
                 Log.e(TAG, "Failed to extract narration from Gemini response")
                 return@withContext Result.failure(IllegalStateException("Could not extract narration from AI response. JSON: $reportJson"))
             }
+            val geminiHighlights = extractHighlightSegmentsFromJson(reportJson)
+            Log.d(TAG, "Gemini highlight segments: ${geminiHighlights.size}")
             
             Log.d(TAG, "📝 Narration text: ${narrationText.take(100)}...")
             
@@ -123,7 +132,13 @@ class MediaPipelineUseCase @Inject constructor(
             
             Log.d(TAG, "✅ TTS complete: ${narrationAudio.length()} bytes")
             
-            val selectedSegments = resolveHighlightSegments(sessionId, videos, sessionStart)
+            val selectedSegments = resolveHighlightSegments(
+                sessionId = sessionId,
+                videos = videos,
+                sessionStart = sessionStart,
+                geminiHighlights = geminiHighlights,
+                audioLog = audioFile
+            )
             val finalVideo = buildFinalVideo(
                 sessionId = sessionId,
                 videos = videos,
@@ -161,7 +176,8 @@ class MediaPipelineUseCase @Inject constructor(
      */
     suspend fun generateReplayWithNarration(
         sessionId: String,
-        narrationText: String
+        narrationText: String,
+        highlightSegments: List<HighlightSegment> = emptyList()
     ): Result<ReplayAssets> = withContext(Dispatchers.IO) {
         Log.d(TAG, "Starting replay generation (narration provided) for session: $sessionId")
 
@@ -173,6 +189,8 @@ class MediaPipelineUseCase @Inject constructor(
             val videos = localRepository.getVideosBySession(sessionId)
             val audioFile = localRepository.getAudioFileBySession(sessionId)
             val sessionStart = localRepository.getSessionStartTime(sessionId)
+
+            validateTimelineAlignment(sessionId, videos, audioFile, sessionStart)
 
             if (videos.isEmpty() && audioFile == null) {
                 return@withContext Result.failure(IllegalStateException("No media found for session $sessionId."))
@@ -187,7 +205,13 @@ class MediaPipelineUseCase @Inject constructor(
                 return@withContext Result.failure(IllegalStateException("TTS Synthesis failed."))
             }
 
-            val selectedSegments = resolveHighlightSegments(sessionId, videos, sessionStart)
+            val selectedSegments = resolveHighlightSegments(
+                sessionId = sessionId,
+                videos = videos,
+                sessionStart = sessionStart,
+                geminiHighlights = highlightSegments,
+                audioLog = audioFile
+            )
             val finalVideo = buildFinalVideo(
                 sessionId = sessionId,
                 videos = videos,
@@ -223,12 +247,7 @@ class MediaPipelineUseCase @Inject constructor(
      */
     private fun extractNarrationFromJson(jsonString: String): String {
         return try {
-            val validJson = jsonString.trim()
-                .removePrefix("```json")
-                .removePrefix("```")
-                .removeSuffix("```")
-                .trim()
-                
+            val validJson = GeminiJsonUtils.cleanMarkdownJson(jsonString)
             val jsonObj = json.parseToJsonElement(validJson).jsonObject
             
             // Priority: article > summary > headline
@@ -365,6 +384,29 @@ class MediaPipelineUseCase @Inject constructor(
         }
     }
 
+    private fun extractHighlightSegmentsFromJson(jsonString: String): List<HighlightSegment> {
+        return try {
+            val validJson = GeminiJsonUtils.cleanMarkdownJson(jsonString)
+            val jsonObj = json.parseToJsonElement(validJson).jsonObject
+            val segments = jsonObj["highlight_segments"]?.jsonArray ?: return emptyList()
+            segments.mapNotNull { element ->
+                val obj = element.jsonObject
+                val start = obj["start_sec"]?.jsonPrimitive?.doubleOrNull
+                    ?: obj["start_timestamp"]?.jsonPrimitive?.doubleOrNull
+                val end = obj["end_sec"]?.jsonPrimitive?.doubleOrNull
+                    ?: obj["end_timestamp"]?.jsonPrimitive?.doubleOrNull
+                if (start == null || end == null || end <= start) {
+                    return@mapNotNull null
+                }
+                val reason = obj["reason"]?.jsonPrimitive?.content ?: ""
+                HighlightSegment(startSec = start, endSec = end, reason = reason)
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to parse highlight segments from Gemini JSON", e)
+            emptyList()
+        }
+    }
+
     private fun buildSrtTextFromCues(cues: List<VideoStitcher.CaptionCue>): String {
         return buildString {
             var counter = 1
@@ -468,6 +510,61 @@ class MediaPipelineUseCase @Inject constructor(
         val seconds = (totalMs % 60_000) / 1000
         val milliseconds = totalMs % 1000
         return String.format("%02d:%02d:%02d,%03d", hours, minutes, seconds, milliseconds)
+    }
+
+    private fun formatSeconds(seconds: Double): String {
+        return String.format(Locale.US, "%.3f", seconds)
+    }
+
+    private fun formatMsAsSeconds(ms: Long): String {
+        return formatSeconds(ms / 1000.0)
+    }
+
+    private fun adjustHighlightsForAudioOffset(
+        sessionId: String,
+        highlights: List<HighlightSegment>,
+        audioLog: MediaLogEntity?,
+        sessionStart: Long?
+    ): List<HighlightSegment> {
+        if (highlights.isEmpty()) return highlights
+        if (audioLog == null || sessionStart == null) {
+            Log.w(TAG, "Audio offset unavailable; using raw highlight seconds ($sessionId)")
+            return highlights
+        }
+
+        val offsetMs = computeAudioOffsetMs(audioLog, sessionStart)
+        if (offsetMs <= 0L) {
+            return highlights
+        }
+
+        val offsetSec = offsetMs / 1000.0
+        Log.d(TAG, "Applying audio offset ${formatSeconds(offsetSec)}s to Gemini highlights ($sessionId)")
+        return highlights.map { segment ->
+            val start = segment.startSec + offsetSec
+            val end = segment.endSec + offsetSec
+            if (end <= start) {
+                segment.copy(startSec = start, endSec = start)
+            } else {
+                segment.copy(startSec = start, endSec = end)
+            }
+        }
+    }
+
+    private fun logHighlightSegments(
+        sessionId: String,
+        highlights: List<HighlightSegment>,
+        label: String
+    ) {
+        if (highlights.isEmpty()) {
+            Log.d(TAG, "$label: none ($sessionId)")
+            return
+        }
+
+        val formatted = highlights.mapIndexed { index, segment ->
+            "${index + 1}:${formatSeconds(segment.startSec)}-${formatSeconds(segment.endSec)}"
+        }.joinToString(", ")
+
+        Log.d(TAG, "$label (${highlights.size}): $formatted ($sessionId)")
     }
 
     private suspend fun burnInSubtitlesIfNeeded(
@@ -598,36 +695,49 @@ class MediaPipelineUseCase @Inject constructor(
             }
         }
 
-        val imageLogs = localRepository.getSessionLogs(sessionId)
-            .filter { it.type == MediaType.IMAGE }
-            .sortedBy { it.timestamp }
-        val imageFiles = imageLogs.map { File(it.filePath) }.filter { it.exists() }
-
-        return if (imageFiles.isNotEmpty()) {
-            Log.d(TAG, "Using image fallback (${imageFiles.size} images) for replay")
-            videoSynthesizer.synthesize(
-                outputSessionId = sessionId,
-                audioFile = narrationAudio,
-                images = imageFiles,
-                imageDurationSec = 5
-            )
-        } else {
-            Log.w(TAG, "No video or image files available for replay")
-            null
-        }
+        Log.w(TAG, "No video files available for replay (image fallback disabled)")
+        return null
     }
 
     private suspend fun resolveHighlightSegments(
         sessionId: String,
         videos: List<MediaLogEntity>,
-        sessionStart: Long?
+        sessionStart: Long?,
+        geminiHighlights: List<HighlightSegment>,
+        audioLog: MediaLogEntity?
     ): List<VideoSegment> {
+        val adjustedHighlights = adjustHighlightsForAudioOffset(
+            sessionId = sessionId,
+            highlights = geminiHighlights,
+            audioLog = audioLog,
+            sessionStart = sessionStart
+        )
+        logHighlightSegments(sessionId, adjustedHighlights, "Gemini highlight windows (sec)")
+        if (adjustedHighlights.isNotEmpty()) {
+            val trimmed = buildSegmentsFromGeminiHighlights(
+                sessionId = sessionId,
+                videos = videos,
+                sessionStart = sessionStart,
+                geminiHighlights = adjustedHighlights
+            )
+            if (trimmed.isNotEmpty()) {
+                return capSegmentsToMaxDuration(trimmed)
+            }
+        }
+
         val highlightVideos = videos.filter { it.type == MediaType.VIDEO_HIGHLIGHT }
         if (highlightVideos.isEmpty()) {
             return emptyList()
         }
         val segments = buildVideoSegments(highlightVideos, sessionStart)
-        return selectSegmentsByImportance(sessionId, segments)
+        val screamEvents = localRepository.getSessionLogs(sessionId)
+            .filter { it.type == MediaType.SCREAM_EVENT && it.decibel != null }
+        val trimmedSegments = if (screamEvents.isEmpty()) {
+            segments
+        } else {
+            trimSegmentsAroundScreams(sessionId, segments, screamEvents)
+        }
+        return selectSegmentsByImportance(sessionId, trimmedSegments)
     }
 
 /**
@@ -723,6 +833,110 @@ class MediaPipelineUseCase @Inject constructor(
             )
         }
         return segments.sortedBy { it.startMs }
+    }
+
+    private suspend fun buildSegmentsFromGeminiHighlights(
+        sessionId: String,
+        videos: List<MediaLogEntity>,
+        sessionStart: Long?,
+        geminiHighlights: List<HighlightSegment>
+    ): List<VideoSegment> {
+        val baseLogs = videos.filter { it.type == MediaType.VIDEO_CHUNK }
+            .ifEmpty { videos.filter { it.type == MediaType.VIDEO_HIGHLIGHT } }
+        if (baseLogs.isEmpty()) {
+            Log.w(TAG, "Gemini highlight mapping skipped: no base video chunks ($sessionId)")
+            return emptyList()
+        }
+
+        val baseSegments = buildVideoSegments(baseLogs, sessionStart)
+        if (baseSegments.isEmpty()) {
+            Log.w(TAG, "Gemini highlight mapping skipped: no base segments ($sessionId)")
+            return emptyList()
+        }
+
+        val orderedHighlights = geminiHighlights
+            .mapNotNull { highlight ->
+                val startMs = (highlight.startSec * 1000.0).toLong().coerceAtLeast(0L)
+                val endMs = (highlight.endSec * 1000.0).toLong().coerceAtLeast(0L)
+                if (endMs <= startMs) null else Pair(startMs, endMs)
+            }
+            .sortedBy { it.first }
+        if (orderedHighlights.isEmpty()) {
+            Log.w(TAG, "Gemini highlight mapping skipped: no valid highlight windows ($sessionId)")
+            return emptyList()
+        }
+
+        val clippedSegments = mutableListOf<VideoSegment>()
+        for ((startMs, endMs) in orderedHighlights) {
+            val windowStart = if (sessionStart != null) startMs else startMs
+            val windowEnd = if (sessionStart != null) endMs else endMs
+            var matched = false
+
+            baseSegments.forEach { segment ->
+                val segStart = segment.startMs
+                val segEnd = segStart + segment.durationMs.coerceAtLeast(0L)
+                val overlapStart = maxOf(segStart, windowStart)
+                val overlapEnd = minOf(segEnd, windowEnd)
+                val overlapDuration = overlapEnd - overlapStart
+                if (overlapDuration <= 0L) return@forEach
+
+                matched = true
+                val clipStartMs = overlapStart - segStart
+                val clipEndMs = clipStartMs + overlapDuration
+                val trimResult = videoStitcher.trimVideoToWindow(
+                    inputVideo = segment.file,
+                    startMs = clipStartMs,
+                    endMs = clipEndMs,
+                    outputSessionId = sessionId,
+                    outputLabel = "gemini_${overlapStart}_${segment.file.nameWithoutExtension}"
+                )
+                val trimmedFile = trimResult.getOrNull()
+                if (trimmedFile == null || !trimmedFile.exists()) {
+                    return@forEach
+                }
+
+                Log.d(
+                    TAG,
+                    "Gemini match: file=${segment.file.name} clip=${formatMsAsSeconds(clipStartMs)}-${formatMsAsSeconds(clipEndMs)}s " +
+                        "session=${formatMsAsSeconds(overlapStart)}-${formatMsAsSeconds(overlapEnd)}s output=${trimmedFile.name}"
+                )
+                clippedSegments.add(
+                    VideoSegment(
+                        file = trimmedFile,
+                        startMs = overlapStart,
+                        durationMs = overlapDuration,
+                        absoluteStartMs = segment.absoluteStartMs + clipStartMs
+                    )
+                )
+            }
+
+            if (!matched) {
+                Log.w(
+                    TAG,
+                    "Gemini window unmatched: ${formatMsAsSeconds(windowStart)}-${formatMsAsSeconds(windowEnd)}s ($sessionId)"
+                )
+            }
+        }
+
+        Log.d(TAG, "Gemini highlight mapping complete: ${clippedSegments.size} clips ($sessionId)")
+        return clippedSegments.sortedBy { it.startMs }
+    }
+
+    private fun capSegmentsToMaxDuration(
+        segments: List<VideoSegment>
+    ): List<VideoSegment> {
+        if (segments.isEmpty()) return segments
+        var total = 0L
+        val capped = mutableListOf<VideoSegment>()
+        for (segment in segments.sortedBy { it.startMs }) {
+            val duration = segment.durationMs.coerceAtLeast(0L)
+            if (total + duration <= MAX_REPLAY_DURATION_MS || capped.isEmpty()) {
+                capped.add(segment)
+                total += duration
+            }
+            if (total >= MAX_REPLAY_DURATION_MS) break
+        }
+        return capped
     }
 
     private suspend fun selectSegmentsByImportance(
@@ -895,6 +1109,122 @@ class MediaPipelineUseCase @Inject constructor(
         val b = Color.blue(color).toFloat()
         return 0.299f * r + 0.587f * g + 0.114f * b
     }
+
+    private fun validateTimelineAlignment(
+        sessionId: String,
+        videos: List<MediaLogEntity>,
+        audioLog: MediaLogEntity?,
+        sessionStart: Long?
+    ) {
+        if (sessionStart == null) {
+            Log.w(TAG, "Timeline validation skipped: sessionStart missing ($sessionId)")
+            return
+        }
+
+        val videoStart = videos.minByOrNull { it.timestamp }?.timestamp
+        val audioStart = audioLog?.timestamp
+        if (videoStart == null || audioStart == null) {
+            Log.w(
+                TAG,
+                "Timeline validation skipped: missing videoStart=$videoStart audioStart=$audioStart ($sessionId)"
+            )
+            return
+        }
+
+        val videoOffsetMs = (videoStart - sessionStart).coerceAtLeast(0L)
+        val audioOffsetMs = (audioStart - sessionStart).coerceAtLeast(0L)
+        val driftMs = abs(videoOffsetMs - audioOffsetMs)
+        if (driftMs > TIMESTAMP_DRIFT_WARN_MS) {
+            Log.w(
+                TAG,
+                "Timeline drift warning: videoOffset=$videoOffsetMs audioOffset=$audioOffsetMs drift=$driftMs ($sessionId)"
+            )
+        } else {
+            Log.d(
+                TAG,
+                "Timeline alignment OK: videoOffset=$videoOffsetMs audioOffset=$audioOffsetMs drift=$driftMs ($sessionId)"
+            )
+        }
+    }
+
+    private suspend fun trimSegmentsAroundScreams(
+        sessionId: String,
+        segments: List<VideoSegment>,
+        screamEvents: List<MediaLogEntity>
+    ): List<VideoSegment> {
+        if (segments.isEmpty() || screamEvents.isEmpty()) return segments
+
+        val trimmed = mutableListOf<VideoSegment>()
+        for (segment in segments) {
+            val screamEvent = findBestScreamEventForSegment(segment, screamEvents)
+            if (screamEvent == null) {
+                trimmed.add(segment)
+                continue
+            }
+            trimmed.add(trimSegmentAroundEvent(sessionId, segment, screamEvent))
+        }
+        return trimmed
+    }
+
+    private fun findBestScreamEventForSegment(
+        segment: VideoSegment,
+        screamEvents: List<MediaLogEntity>
+    ): MediaLogEntity? {
+        val start = segment.absoluteStartMs
+        val end = start + segment.durationMs.coerceAtLeast(0L)
+        val midpoint = start + (segment.durationMs / 2)
+        val candidates = screamEvents.filter { event ->
+            event.decibel != null && event.timestamp in start..end
+        }
+        if (candidates.isEmpty()) return null
+        return candidates.maxWithOrNull(
+            compareBy<MediaLogEntity> { it.decibel ?: 0 }
+                .thenBy { -abs(it.timestamp - midpoint) }
+        )
+    }
+
+    private suspend fun trimSegmentAroundEvent(
+        sessionId: String,
+        segment: VideoSegment,
+        screamEvent: MediaLogEntity
+    ): VideoSegment {
+        val eventOffsetMs = screamEvent.timestamp - segment.absoluteStartMs
+        if (eventOffsetMs < 0 || eventOffsetMs > segment.durationMs) {
+            return segment
+        }
+
+        val clipStartMs = (eventOffsetMs - SCREAM_EVENT_PRE_MS).coerceAtLeast(0L)
+        val clipEndMs = (eventOffsetMs + SCREAM_EVENT_POST_MS)
+            .coerceAtMost(segment.durationMs)
+        val clipDurationMs = (clipEndMs - clipStartMs).coerceAtLeast(0L)
+        if (clipDurationMs <= 0L) {
+            return segment
+        }
+        if (clipStartMs == 0L && clipEndMs >= segment.durationMs) {
+            return segment
+        }
+
+        val trimResult = videoStitcher.trimVideoToWindow(
+            inputVideo = segment.file,
+            startMs = clipStartMs,
+            endMs = clipEndMs,
+            outputSessionId = sessionId,
+            outputLabel = "scream_${screamEvent.timestamp}_${segment.file.nameWithoutExtension}"
+        )
+        val trimmedFile = trimResult.getOrNull()
+        if (trimmedFile == null || !trimmedFile.exists()) {
+            return segment
+        }
+
+        val newStartMs = segment.startMs + clipStartMs
+        val newAbsoluteStartMs = segment.absoluteStartMs + clipStartMs
+        return VideoSegment(
+            file = trimmedFile,
+            startMs = newStartMs,
+            durationMs = clipDurationMs,
+            absoluteStartMs = newAbsoluteStartMs
+        )
+    }
     
     companion object {
         private const val TAG = "MediaPipeline"
@@ -903,5 +1233,8 @@ class MediaPipelineUseCase @Inject constructor(
         private const val SEGMENT_EVENT_DISTANCE_PENALTY = 0.5f
         private const val MOTION_SCORE_WEIGHT = 2.0f
         private const val DEFAULT_SEGMENT_DURATION_MS = 30_000L
+        private const val SCREAM_EVENT_PRE_MS = 15_000L
+        private const val SCREAM_EVENT_POST_MS = 15_000L
+        private const val TIMESTAMP_DRIFT_WARN_MS = 2_000L
     }
 }
