@@ -539,11 +539,12 @@ class MediaPipelineUseCase @Inject constructor(
 
         val offsetSec = offsetMs / 1000.0
         Log.d(TAG, "Applying audio offset ${formatSeconds(offsetSec)}s to Gemini highlights ($sessionId)")
-        return highlights.map { segment ->
+        return highlights.mapNotNull { segment ->
             val start = segment.startSec + offsetSec
             val end = segment.endSec + offsetSec
             if (end <= start) {
-                segment.copy(startSec = start, endSec = start)
+                Log.w(TAG, "Filtering out invalid segment (end <= start after offset): ${formatSeconds(start)}-${formatSeconds(end)} ($sessionId)")
+                null
             } else {
                 segment.copy(startSec = start, endSec = end)
             }
@@ -868,8 +869,8 @@ class MediaPipelineUseCase @Inject constructor(
 
         val clippedSegments = mutableListOf<VideoSegment>()
         for ((startMs, endMs) in orderedHighlights) {
-            val windowStart = if (sessionStart != null) startMs else startMs
-            val windowEnd = if (sessionStart != null) endMs else endMs
+            val windowStart = startMs
+            val windowEnd = endMs
             var matched = false
 
             baseSegments.forEach { segment ->
