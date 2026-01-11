@@ -5,10 +5,11 @@ import android.widget.FrameLayout
 import android.content.pm.ActivityInfo
 import android.app.Activity
 import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.annotation.OptIn
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -21,6 +22,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
+import androidx.media3.common.TrackSelectionParameters
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
@@ -55,16 +57,21 @@ fun VideoPlayerScreen(
     // Initialize ExoPlayer
     val exoPlayer = remember(resolvedUri, subtitlePath) {
         ExoPlayer.Builder(context).build().apply {
+            val trackParams = TrackSelectionParameters.Builder(context)
+                .setPreferredTextLanguage(Locale.getDefault().language)
+                .setSelectUndeterminedTextLanguage(true)
+                .build()
+            setTrackSelectionParameters(trackParams)
             val builder = MediaItem.Builder().setUri(resolvedUri)
             subtitlePath?.takeIf { it.isNotBlank() }?.let { rawPath ->
                 val subtitleFile = File(rawPath)
                 if (subtitleFile.exists()) {
                     val subtitleConfig = MediaItem.SubtitleConfiguration.Builder(Uri.fromFile(subtitleFile))
-                        .setMimeType(MimeTypes.TEXT_SRT)
+                        .setMimeType(MimeTypes.APPLICATION_SUBRIP)
                         .setLanguage(Locale.getDefault().language)
                         .setSelectionFlags(C.SELECTION_FLAG_DEFAULT)
                         .build()
-                    builder.setSubtitles(listOf(subtitleConfig))
+                    builder.setSubtitleConfigurations(listOf(subtitleConfig))
                 }
             }
             setMediaItem(builder.build())
@@ -73,6 +80,15 @@ fun VideoPlayerScreen(
         }
     }
 
+    val handleBack = remember(exoPlayer, onBack) {
+        {
+            exoPlayer.stop()
+            onBack()
+        }
+    }
+
+    BackHandler(onBack = handleBack)
+
     DisposableEffect(Unit) {
         val activity = context as? Activity
         val originalOrientation = activity?.requestedOrientation ?: ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
@@ -80,6 +96,7 @@ fun VideoPlayerScreen(
 
         onDispose {
             activity?.requestedOrientation = originalOrientation
+            exoPlayer.stop()
             exoPlayer.release()
         }
     }
@@ -117,9 +134,9 @@ fun VideoPlayerScreen(
                     .padding(16.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                NoirIconButton(onClick = onBack) {
+                NoirIconButton(onClick = handleBack) {
                     Icon(
-                        imageVector = Icons.Default.ArrowBack,
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                         contentDescription = "Back",
                         tint = Color.White
                     )

@@ -4,6 +4,7 @@ import android.util.Log
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.hackathon.afterlog.feature.report.components.CinematicLoadingView
@@ -13,7 +14,9 @@ import com.hackathon.afterlog.feature.report.components.InvestigationReportView
 import com.hackathon.afterlog.feature.report.debug.DebugConfig
 import com.hackathon.afterlog.feature.result.GameResultViewModel
 import com.hackathon.afterlog.feature.result.ResultUiState
+import com.hackathon.afterlog.data.local.entities.MediaType
 import kotlinx.coroutines.delay
+import java.io.File
 
 private const val TAG = "ReportDetailScreen"
 
@@ -25,11 +28,17 @@ fun ReportDetailScreen(
 ) {
     Log.d(TAG, "ReportDetailScreen composable launched with sessionId: $sessionId")
     val uiState by viewModel.uiState.collectAsState()
-    var showLoadingScreen by remember { mutableStateOf(true) }
+    var showLoadingScreen by rememberSaveable(sessionId) { mutableStateOf(true) }
+    var showBootSequence by rememberSaveable(sessionId) { mutableStateOf(true) }
 
     // This effect ensures a minimum loading time for cinematic effect
     // and triggers data loading or mock data injection.
     LaunchedEffect(sessionId) {
+        if (uiState is ResultUiState.Success) {
+            showLoadingScreen = false
+            showBootSequence = false
+            return@LaunchedEffect
+        }
         Log.d(TAG, "LaunchedEffect for data loading triggered.")
         val minLoadingTime = 3000L
         val startTime = System.currentTimeMillis()
@@ -54,8 +63,6 @@ fun ReportDetailScreen(
         showLoadingScreen = false
     }
 
-    var showBootSequence by remember { mutableStateOf(true) }
-
     Box(modifier = Modifier.fillMaxSize()) {
         if (showBootSequence) {
             com.hackathon.afterlog.feature.report.components.BootSequenceAnimation {
@@ -74,15 +81,30 @@ fun ReportDetailScreen(
                         val isPlaying by viewModel.isPlaying.collectAsState()
                         val isTtsLoading by viewModel.isTtsLoading.collectAsState()
 
-                        val videoPath = state.replayVideoPath
-                            ?: state.logs
-                                .find { it.filePath.contains("highlight") && java.io.File(it.filePath).exists() }
-                                ?.filePath
+                        val replayFile = state.replayVideoPath?.let { File(it) }?.takeIf { it.exists() }
+                        val highlightFile = state.logs
+                            .firstOrNull { it.type == MediaType.VIDEO_HIGHLIGHT }
+                            ?.filePath
+                            ?.let { File(it) }
+                            ?.takeIf { it.exists() }
+                        val chunkFile = state.logs
+                            .firstOrNull { it.type == MediaType.VIDEO_CHUNK }
+                            ?.filePath
+                            ?.let { File(it) }
+                            ?.takeIf { it.exists() }
+                        val videoPath = replayFile?.absolutePath
+                            ?: highlightFile?.absolutePath
+                            ?: chunkFile?.absolutePath
+                        val effectiveSubtitlePath = if (videoPath?.contains("_burned") == true) {
+                            null
+                        } else {
+                            state.subtitlePath
+                        }
 
                         InvestigationReportView(
                             report = state.report,
                             videoPath = videoPath,
-                            subtitlePath = state.subtitlePath,
+                            subtitlePath = effectiveSubtitlePath,
                             isPlaying = isPlaying,
                             isTtsLoading = isTtsLoading,
                             isReplayGenerating = state.isReplayGenerating,
@@ -94,6 +116,9 @@ fun ReportDetailScreen(
                                     Verdict: ${state.report.verdict}
                                 """.trimIndent()
                                 viewModel.toggleNarration(textToRead)
+                            },
+                            onRegenerateClick = {
+                                viewModel.regenerateReplay(sessionId)
                             },
                             onVideoClick = { path, subtitle ->
                                 onNavigateToVideo(path, subtitle)

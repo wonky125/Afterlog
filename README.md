@@ -32,6 +32,7 @@ To achieve this, we need to understand both the **visual changes of the board** 
 - **Newspaper View**: Presents the game log as a vintage immersive newspaper article.
 - **Hybrid Video Synthesis**: Merges real video clips, time-lapse photos, and AI-generated narration (TTS) into a final MP4 video.
 - **Sync-Play**: Click on any "investigation log" in the report to instantly jump to that moment in the replay video.
+- **Highlight Deduping**: Prevents duplicate highlight entries when audio spikes and ROI motion overlap.
 
 ---
 

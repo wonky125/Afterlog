@@ -159,7 +159,7 @@ class GeminiRepository @Inject constructor(
      * Output format:
      * {
      *   "events": [
-     *     {"start_ms": 12000, "end_ms": 14000, "text": "운명의 굴림"}
+     *     {"start_ms": 12000, "end_ms": 14000, "text": "The dice are cast"}
      *   ]
      * }
      */
@@ -168,25 +168,38 @@ class GeminiRepository @Inject constructor(
         eventHints: List<String> = emptyList()
     ): List<CaptionLine> = withContext(Dispatchers.IO) {
         try {
-            val audioData = uploadAudioToGemini(audioFile) ?: return@withContext emptyList()
+            val audioData = uploadAudioToGemini(audioFile)
 
             val prompt = """
                 You are a 1920s noir journalist writing ultra-short captions for a newsreel.
                 Keep the mood: fate, evidence, betrayal, silence breaking.
-                
+
                 RULES:
-                - Output JSON only: {"events":[{"start_ms":12000,"end_ms":14000,"text":"어둠이 갈라졌다"}]}
-                - 5~10 events max.
-                - text: 2~5 words (~12 chars), no slang, no modern internet words.
-                - Use strong noir phrases: 운명, 침묵, 단서, 그림자, 배신, 결판.
-                - Align to audio moments (scream, loud spike, tense dialogue).
-                
+                - Output JSON only: {"events":[{"start_ms":12000,"end_ms":14000,"text":"The dice are cast"}]}
+                - 5-10 events max.
+                - text: 2-5 words, about 12 chars max, short headline style.
+                - Avoid modern slang or internet words.
+                - Favor noir vocabulary: fate, omen, evidence, betrayal, silence, rupture, verdict.
+                - Match audio moments (scream, loud spike, tense dialogue).
+                - Prefer headline-style phrases, not exclamations.
+
+                TONE EXAMPLES:
+                - "The dice are cast"
+                - "Fate rolls"
+                - "Silence breaks"
+                - "A clue emerges"
+                - "A knife at the back"
+                - "Judgment falls"
+                - "The curtain drops"
+
                 HINTS:
                 ${eventHints.joinToString(separator = "; ")}
             """.trimIndent()
 
             val inputContent = content {
-                fileData(uri = audioData.first, mimeType = audioData.second)
+                if (audioData != null) {
+                    fileData(uri = audioData.first, mimeType = audioData.second)
+                }
                 text(prompt)
             }
 
@@ -204,6 +217,11 @@ class GeminiRepository @Inject constructor(
             var cleaned = raw.trim()
             if (cleaned.startsWith("```")) {
                 cleaned = cleaned.removePrefix("```json").removePrefix("```").removeSuffix("```").trim()
+            }
+            val startIdx = cleaned.indexOf('{')
+            val endIdx = cleaned.lastIndexOf('}')
+            if (startIdx >= 0 && endIdx > startIdx) {
+                cleaned = cleaned.substring(startIdx, endIdx + 1)
             }
             val root = json.parseToJsonElement(cleaned).jsonObject
             val events = root["events"]?.jsonArray ?: return emptyList()

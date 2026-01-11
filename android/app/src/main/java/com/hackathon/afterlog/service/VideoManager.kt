@@ -2,6 +2,11 @@ package com.hackathon.afterlog.service
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
+import android.media.MediaMetadataRetriever
 import android.util.Log
 import androidx.camera.core.CameraSelector
 import androidx.camera.lifecycle.ProcessCameraProvider
@@ -17,6 +22,8 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.io.File
+import java.io.FileOutputStream
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentLinkedDeque
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -48,6 +55,11 @@ class VideoManager @Inject constructor(
     // Centered Highlight Logic
     private var pendingHighlightCount = 0
     private val highlightMutex = Mutex()
+    private var lastMotionHighlightMs = 0L
+    private val motionMutex = Mutex()
+    private val roiHighlightCooldownMs = 60_000L
+    private val roiMotionThreshold = 18f
+    private val highlightIndex = ConcurrentHashMap.newKeySet<String>()
 
     fun setPerspectiveGuide(config: PerspectiveGuideConfig) {
         perspectiveGuide = config
@@ -62,6 +74,7 @@ class VideoManager @Inject constructor(
         isCapturing = true
         currentSessionId = sessionId
         currentScope = scope // Store for saveBufferForEvent
+        highlightIndex.clear()
         
         Log.d("VideoManager", "Starting video loop for session: $sessionId")
 
@@ -105,27 +118,23 @@ class VideoManager @Inject constructor(
     }
 
     private suspend fun runMockVideoLoop(sessionId: String, scope: CoroutineScope) {
-        val random = java.util.Random()
         Log.i("VideoManager", "Starting Mock Video Loop")
 
         while (scope.isActive && isCapturing) {
             val timestamp = timeManager.getCurrentTime()
-            val tempFile = fileManager.getTempVideoFile(sessionId, timestamp)
-            
-            // Create dummy file
+            val imageFile = fileManager.getImageFile(sessionId, timestamp)
             try {
-                // fileManager.createDummyVideoFile(tempFile) // Removed: Method does not exist
-                // We'll just write randomness here for simplicity
-                java.io.FileOutputStream(tempFile).use { out ->
-                    val bytes = ByteArray(1024 * 100) // 100KB dummy
-                    random.nextBytes(bytes)
-                    out.write(bytes)
-                }
-                Log.d("VideoManager", "Created Mock Video Chunk: ${tempFile.name}")
-                addToBuffer(tempFile)
-                
+                createMockImage(imageFile, timestamp)
+                repository.logMedia(
+                    sessionId = sessionId,
+                    type = MediaType.IMAGE,
+                    filePath = imageFile.absolutePath,
+                    decibel = null,
+                    timestamp = timestamp
+                )
+                Log.d("VideoManager", "Created mock image: ${imageFile.name}")
             } catch (e: Exception) {
-                Log.e("VideoManager", "Failed to create mock video", e)
+                Log.e("VideoManager", "Failed to create mock image", e)
             }
 
             delay(chunkDurationMillis)
@@ -192,7 +201,9 @@ class VideoManager @Inject constructor(
             }
         }
 
-        if (isPending) {
+        val roiHighlight = shouldPromoteToHighlight(file)
+
+        if (isPending || roiHighlight) {
             saveAsHighlight(sessionId, file)
         }
 
@@ -211,6 +222,135 @@ class VideoManager @Inject constructor(
         }
     }
 
+    private data class RoiBounds(val left: Int, val top: Int, val right: Int, val bottom: Int) {
+        val width: Int get() = right - left
+        val height: Int get() = bottom - top
+    }
+
+    private suspend fun shouldPromoteToHighlight(file: File): Boolean = withContext(Dispatchers.IO) {
+        val guide = perspectiveGuide ?: return@withContext false
+        if (!file.exists()) return@withContext false
+
+        val now = timeManager.getCurrentTime()
+        val onCooldown = motionMutex.withLock {
+            now - lastMotionHighlightMs < roiHighlightCooldownMs
+        }
+        if (onCooldown) return@withContext false
+
+        val retriever = MediaMetadataRetriever()
+        var firstFrame: Bitmap? = null
+        var secondFrame: Bitmap? = null
+        try {
+            retriever.setDataSource(file.absolutePath)
+            val durationMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+            if (durationMs <= 0L) return@withContext false
+
+            val durationUs = durationMs * 1000L
+            val firstUs = minOf(500_000L, durationUs / 3)
+            val secondUs = minOf(2_000_000L, (durationUs * 2) / 3)
+
+            firstFrame = retriever.getFrameAtTime(firstUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+            secondFrame = retriever.getFrameAtTime(secondUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+
+            if (firstFrame == null || secondFrame == null) {
+                return@withContext false
+            }
+
+            val score = computeMotionScore(firstFrame, secondFrame, guide)
+            if (score >= roiMotionThreshold) {
+                val accepted = motionMutex.withLock {
+                    val stillOk = now - lastMotionHighlightMs >= roiHighlightCooldownMs
+                    if (stillOk) {
+                        lastMotionHighlightMs = now
+                    }
+                    stillOk
+                }
+                if (accepted) {
+                    Log.d("VideoManager", "ROI motion highlight detected (score=$score) for ${file.name}")
+                }
+                return@withContext accepted
+            }
+            false
+        } catch (e: Exception) {
+            Log.e("VideoManager", "ROI motion check failed", e)
+            false
+        } finally {
+            try { retriever.release() } catch (e: Exception) {}
+            firstFrame?.recycle()
+            secondFrame?.recycle()
+        }
+    }
+
+    private fun computeMotionScore(
+        firstFrame: Bitmap,
+        secondFrame: Bitmap,
+        guide: PerspectiveGuideConfig
+    ): Float {
+        val targetWidth = 160
+        val firstScaled = scaleForSampling(firstFrame, targetWidth)
+        val secondScaled = scaleForSampling(secondFrame, targetWidth)
+
+        val bounds = computeRoiBounds(guide, firstScaled.width, firstScaled.height)
+        if (bounds.width <= 0 || bounds.height <= 0) {
+            return 0f
+        }
+
+        val step = maxOf(1, minOf(bounds.width, bounds.height) / 32)
+        var diffSum = 0f
+        var count = 0
+
+        for (y in bounds.top until bounds.bottom step step) {
+            for (x in bounds.left until bounds.right step step) {
+                val c1 = firstScaled.getPixel(x, y)
+                val c2 = secondScaled.getPixel(x, y)
+                val luma1 = luminance(c1)
+                val luma2 = luminance(c2)
+                diffSum += kotlin.math.abs(luma1 - luma2)
+                count++
+            }
+        }
+
+        if (firstScaled !== firstFrame) firstScaled.recycle()
+        if (secondScaled !== secondFrame) secondScaled.recycle()
+
+        return if (count > 0) diffSum / count else 0f
+    }
+
+    private fun scaleForSampling(bitmap: Bitmap, targetWidth: Int): Bitmap {
+        if (bitmap.width <= targetWidth) {
+            return bitmap
+        }
+        val scaledHeight = (bitmap.height * (targetWidth / bitmap.width.toFloat()))
+            .toInt()
+            .coerceAtLeast(1)
+        return Bitmap.createScaledBitmap(bitmap, targetWidth, scaledHeight, true)
+    }
+
+    private fun computeRoiBounds(
+        guide: PerspectiveGuideConfig,
+        width: Int,
+        height: Int
+    ): RoiBounds {
+        val minX = guide.points.minOf { it.x }.coerceIn(0f, 1f)
+        val maxX = guide.points.maxOf { it.x }.coerceIn(0f, 1f)
+        val minY = guide.points.minOf { it.y }.coerceIn(0f, 1f)
+        val maxY = guide.points.maxOf { it.y }.coerceIn(0f, 1f)
+
+        val left = (minX * width).toInt().coerceIn(0, width - 1)
+        val right = (maxX * width).toInt().coerceIn(left + 1, width)
+        val top = (minY * height).toInt().coerceIn(0, height - 1)
+        val bottom = (maxY * height).toInt().coerceIn(top + 1, height)
+
+        return RoiBounds(left = left, top = top, right = right, bottom = bottom)
+    }
+
+    private fun luminance(color: Int): Float {
+        val r = Color.red(color).toFloat()
+        val g = Color.green(color).toFloat()
+        val b = Color.blue(color).toFloat()
+        return 0.299f * r + 0.587f * g + 0.114f * b
+    }
+
     private fun saveAsHighlight(sessionId: String, file: File) {
         currentScope?.launch(Dispatchers.IO) {
             if (!file.exists()) return@launch
@@ -219,6 +359,11 @@ class VideoManager @Inject constructor(
             val timestamp = parsedTimestamp ?: timeManager.getCurrentTime()
             Log.d("VideoManager", "Highlight timestamp=$timestamp parsed=$parsedTimestamp file=${file.name}")
             val permFile = fileManager.getHighlightVideoFile(sessionId, file.name)
+            val highlightKey = permFile.absolutePath
+            if (!highlightIndex.add(highlightKey)) {
+                Log.d("VideoManager", "Highlight already saved, skipping duplicate: ${permFile.name}")
+                return@launch
+            }
             
             try {
                 file.copyTo(permFile, overwrite = true)
@@ -235,6 +380,7 @@ class VideoManager @Inject constructor(
                 Log.d("VideoManager", "Saved VIDEO_HIGHLIGHT: ${permFile.name} guide=$guideText")
             } catch (e: Exception) {
                 Log.e("VideoManager", "Failed to copy highlight file", e)
+                highlightIndex.remove(highlightKey)
             }
         }
     }
@@ -242,6 +388,24 @@ class VideoManager @Inject constructor(
     private fun extractTimestampFromFileName(fileName: String): Long? {
         val regex = Regex("temp_vid_.*_(\\d+)\\.mp4$")
         return regex.find(fileName)?.groupValues?.getOrNull(1)?.toLongOrNull()
+    }
+
+    private fun createMockImage(file: File, timestamp: Long) {
+        val bitmap = Bitmap.createBitmap(640, 480, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        canvas.drawColor(Color.DKGRAY)
+
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            textSize = 36f
+        }
+        canvas.drawText("MOCK VIDEO", 40f, 80f, paint)
+        canvas.drawText("$timestamp", 40f, 130f, paint)
+
+        FileOutputStream(file).use { out ->
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 90, out)
+        }
+        bitmap.recycle()
     }
 
     /**
@@ -282,5 +446,6 @@ class VideoManager @Inject constructor(
         // Note: We don't delete files here to allow post-session analysis if needed, 
         // but for safety we can clear the memory reference.
         tempBuffer.clear()
+        highlightIndex.clear()
     }
 }

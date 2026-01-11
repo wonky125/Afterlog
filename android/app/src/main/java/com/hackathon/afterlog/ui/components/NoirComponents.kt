@@ -78,6 +78,17 @@ fun NoirButton(
     icon: @Composable (() -> Unit)? = null,
     enabled: Boolean = true
 ) {
+    val isMultiLine = text.contains('\n')
+    val baseStyle = TextStyle(
+        fontFamily = PlayfairDisplayFamily, // Brand font
+        fontWeight = FontWeight.Bold,
+        letterSpacing = 2.sp // Widely spaced
+    )
+    val textStyle = if (isMultiLine) {
+        baseStyle.copy(fontSize = 14.sp, letterSpacing = 1.sp)
+    } else {
+        baseStyle
+    }
     Button(
         onClick = onClick,
         enabled = enabled,
@@ -101,11 +112,8 @@ fun NoirButton(
             }
             Text(
                 text = text.uppercase(),
-                style = TextStyle(
-                    fontFamily = PlayfairDisplayFamily, // Brand font
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 2.sp // Widely spaced
-                )
+                style = textStyle,
+                maxLines = if (isMultiLine) 2 else 1
             )
         }
     }

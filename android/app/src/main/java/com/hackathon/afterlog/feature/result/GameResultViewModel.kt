@@ -130,12 +130,16 @@ class GameResultViewModel @Inject constructor(
                 // 4. Safe JSON Parsing
                 val parsedReport = parseGeminiResponse(rawResponse)
 
+                val subtitlePath = logs
+                    .lastOrNull { it.type == MediaType.SUBTITLE && File(it.filePath).exists() }
+                    ?.filePath
+
                 _uiState.value = ResultUiState.Success(
                     report = parsedReport,
                     rawText = if (parsedReport == null) rawResponse else null,
                     logs = logs,
                     replayVideoPath = null,
-                    subtitlePath = null,
+                    subtitlePath = subtitlePath,
                     isReplayGenerating = parsedReport != null
                 )
 
@@ -205,6 +209,39 @@ class GameResultViewModel @Inject constructor(
             ${report.article}.
             Verdict: ${report.verdict}
         """.trimIndent()
+    }
+
+    fun regenerateReplay(sessionId: String) {
+        val currentState = _uiState.value
+        if (currentState !is ResultUiState.Success) return
+        val report = currentState.report ?: return
+        if (currentState.isReplayGenerating) return
+
+        val actualSessionId = currentState.logs.firstOrNull()?.sessionId ?: sessionId
+        val narrationText = buildNarrationText(report)
+
+        _uiState.value = currentState.copy(isReplayGenerating = true)
+        viewModelScope.launch {
+            val replayResult = mediaPipelineUseCase.generateReplayWithNarration(
+                sessionId = actualSessionId,
+                narrationText = narrationText
+            )
+
+            val assets = replayResult.getOrNull()
+            if (assets != null) {
+                val updatedState = _uiState.value
+                if (updatedState is ResultUiState.Success) {
+                    _uiState.value = updatedState.copy(
+                        replayVideoPath = assets.videoFile.absolutePath,
+                        subtitlePath = assets.subtitleFile?.absolutePath,
+                        isReplayGenerating = false
+                    )
+                }
+            } else if (_uiState.value is ResultUiState.Success) {
+                val updatedState = _uiState.value as ResultUiState.Success
+                _uiState.value = updatedState.copy(isReplayGenerating = false)
+            }
+        }
     }
 
     /**

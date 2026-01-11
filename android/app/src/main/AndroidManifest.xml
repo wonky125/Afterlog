@@ -39,6 +39,11 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".feature.preview.MiniPreviewActivity"
+            android:exported="false"
+            android:theme="@style/Theme.AfterLog" />
+
         <service
             android:name=".service.AfterLogService"
             android:enabled="true"
