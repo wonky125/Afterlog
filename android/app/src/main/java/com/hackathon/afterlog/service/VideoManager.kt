@@ -3,9 +3,7 @@ package com.hackathon.afterlog.service
 import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Bitmap
-import android.graphics.Canvas
 import android.graphics.Color
-import android.graphics.Paint
 import android.media.MediaMetadataRetriever
 import android.util.Log
 import androidx.camera.core.CameraSelector
@@ -22,11 +20,11 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.io.File
-import java.io.FileOutputStream
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentLinkedDeque
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicInteger
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -52,9 +50,8 @@ class VideoManager @Inject constructor(
     private val chunkDurationMillis = 30_000L
     private var currentScope: CoroutineScope? = null // Store for lifecycle-aware operations
     
-    // Centered Highlight Logic
-    private var pendingHighlightCount = 0
-    private val highlightMutex = Mutex()
+    // Centered Highlight Logic - AtomicInteger for thread-safe access without coroutine race
+    private val pendingHighlightCount = AtomicInteger(0)
     private var lastMotionHighlightMs = 0L
     private val motionMutex = Mutex()
     private val roiHighlightCooldownMs = 60_000L
@@ -121,22 +118,7 @@ class VideoManager @Inject constructor(
         Log.i("VideoManager", "Starting Mock Video Loop")
 
         while (scope.isActive && isCapturing) {
-            val timestamp = timeManager.getCurrentTime()
-            val imageFile = fileManager.getImageFile(sessionId, timestamp)
-            try {
-                createMockImage(imageFile, timestamp)
-                repository.logMedia(
-                    sessionId = sessionId,
-                    type = MediaType.IMAGE,
-                    filePath = imageFile.absolutePath,
-                    decibel = null,
-                    timestamp = timestamp
-                )
-                Log.d("VideoManager", "Created mock image: ${imageFile.name}")
-            } catch (e: Exception) {
-                Log.e("VideoManager", "Failed to create mock image", e)
-            }
-
+            Log.w("VideoManager", "Mock video loop active; skipping capture (no IMAGE logging).")
             delay(chunkDurationMillis)
         }
     }
@@ -194,15 +176,12 @@ class VideoManager @Inject constructor(
     private suspend fun handleNewChunk(file: File) {
         val sessionId = currentSessionId ?: return
         
-        // Check if this chunk is part of a "future" highlight window
-        val isPending = highlightMutex.withLock {
-            if (pendingHighlightCount > 0) {
-                pendingHighlightCount--
-                true
-            } else {
-                false
-            }
-        }
+        // Check if this chunk is part of a "future" highlight window (atomic, no race)
+        val isPending = pendingHighlightCount.getAndUpdate { count ->
+            if (count > 0) count - 1 else 0
+        } > 0
+
+        persistVideoChunk(sessionId, file)
 
         val roiHighlight = shouldPromoteToHighlight(file)
 
@@ -221,6 +200,30 @@ class VideoManager @Inject constructor(
                 val oldFile = tempBuffer.pollFirst()
                 oldFile?.delete()
                 Log.d("VideoManager", "Deleted old chunk: ${oldFile?.name}")
+            }
+        }
+    }
+
+    private suspend fun persistVideoChunk(sessionId: String, file: File) {
+        currentScope?.launch(Dispatchers.IO) {
+            if (!file.exists()) return@launch
+
+            val parsedTimestamp = extractTimestampFromFileName(file.name)
+            val timestamp = parsedTimestamp ?: timeManager.getCurrentTime()
+            val permFile = fileManager.getVideoChunkFile(sessionId, timestamp)
+
+            try {
+                file.copyTo(permFile, overwrite = true)
+                repository.logMedia(
+                    sessionId = sessionId,
+                    type = MediaType.VIDEO_CHUNK,
+                    filePath = permFile.absolutePath,
+                    decibel = null,
+                    timestamp = timestamp
+                )
+                Log.d("VideoManager", "Saved VIDEO_CHUNK: ${permFile.name}")
+            } catch (e: Exception) {
+                Log.e("VideoManager", "Failed to persist video chunk", e)
             }
         }
     }
@@ -403,23 +406,7 @@ class VideoManager @Inject constructor(
         return regex.find(fileName)?.groupValues?.getOrNull(1)?.toLongOrNull()
     }
 
-    private fun createMockImage(file: File, timestamp: Long) {
-        val bitmap = Bitmap.createBitmap(640, 480, Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(bitmap)
-        canvas.drawColor(Color.DKGRAY)
-
-        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.WHITE
-            textSize = 36f
-        }
-        canvas.drawText("MOCK VIDEO", 40f, 80f, paint)
-        canvas.drawText("$timestamp", 40f, 130f, paint)
-
-        FileOutputStream(file).use { out ->
-            bitmap.compress(Bitmap.CompressFormat.JPEG, 90, out)
-        }
-        bitmap.recycle()
-    }
+    
 
     /**
      * Triggered by AudioMonitor (Scream Event).
@@ -440,12 +427,8 @@ class VideoManager @Inject constructor(
             }
         }
 
-        // 2. Schedule capture of next 1.5 minutes (Post-event reaction)
-        currentScope?.launch {
-            highlightMutex.withLock {
-                pendingHighlightCount = 3 // Next 3 chunks (90s) will be saved
-            }
-        }
+        // 2. Schedule capture of next 1.5 minutes (Post-event reaction) - synchronous, no race
+        pendingHighlightCount.set(3) // Next 3 chunks (90s) will be saved
     }
 
     fun stopRecording() {
