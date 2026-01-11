@@ -15,6 +15,7 @@ import androidx.lifecycle.LifecycleService
 import androidx.lifecycle.lifecycleScope
 import com.hackathon.afterlog.MainActivity
 import com.hackathon.afterlog.R
+import com.hackathon.afterlog.data.local.FileManager
 import com.hackathon.afterlog.data.model.PerspectiveGuideConfig
 import com.hackathon.afterlog.data.repository.LocalRepository
 import com.hackathon.afterlog.feature.preview.MiniPreviewActivity
@@ -41,7 +42,7 @@ class AfterLogService : LifecycleService() {
     lateinit var repository: LocalRepository
 
     @Inject
-    lateinit var cameraManager: CameraManager
+    lateinit var fileManager: FileManager
 
     @Inject
     lateinit var audioMonitor: AudioMonitor
@@ -125,6 +126,14 @@ class AfterLogService : LifecycleService() {
     private fun handleNewSession() {
         Log.i(TAG, "Starting new session...")
         lifecycleScope.launch {
+            val previousSessionId = repository.getLastSessionId()
+            if (!previousSessionId.isNullOrBlank()) {
+                Log.d(TAG, "Cleaning up previous session: $previousSessionId")
+                repository.deleteSessionData(previousSessionId)
+                fileManager.deleteSessionMediaFiles(previousSessionId)
+                fileManager.deleteSessionArtifacts(previousSessionId)
+                fileManager.clearTempFiles()
+            }
             val newSessionId = repository.startNewSession()
             handleResumeSession(newSessionId, null)
         }
@@ -184,8 +193,7 @@ class AfterLogService : LifecycleService() {
             showToast("Video Error: ${e.message}")
         }
 
-        // Start Photo Timelapse (if needed, CameraManager logic)
-        cameraManager.startCapturing(sessionId, lifecycleScope)
+        // Photo timelapse disabled to reduce storage usage.
 
         showToast("Layout confirmed. You may dim the display; recording continues.")
 
@@ -235,11 +243,6 @@ class AfterLogService : LifecycleService() {
         // Stop all recording components
         audioMonitor.stopMonitoring()
         videoManager.stopRecording()
-        cameraManager.stopCapturing()
-        
-        cameraManager.stopCapturing()
-        cameraManager.shutdown()
-        
         cameraUseCaseManager.shutdown()
         
         // End session in database

@@ -51,6 +51,10 @@ class LocalRepository @Inject constructor(
     suspend fun getSessionById(sessionId: String): SessionEntity? {
         return sessionDao.getSessionById(sessionId)
     }
+
+    suspend fun getLastSessionId(): String? {
+        return sessionDao.getLastSession()?.id
+    }
     
     suspend fun getSessionStartTime(sessionId: String): Long? {
         return sessionDao.getSessionById(sessionId)?.startTime
@@ -76,6 +80,11 @@ class LocalRepository @Inject constructor(
 
     suspend fun deleteLogsBySessionAndType(sessionId: String, type: MediaType) {
         logDao.deleteLogsBySessionAndType(sessionId, type)
+    }
+
+    suspend fun deleteSessionData(sessionId: String) {
+        logDao.deleteLogsBySession(sessionId)
+        sessionDao.deleteSession(sessionId)
     }
 
     fun getLogsForSession(sessionId: String): Flow<List<MediaLogEntity>> {

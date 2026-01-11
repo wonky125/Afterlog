@@ -108,6 +108,7 @@ fun ReportDetailScreen(
                             isPlaying = isPlaying,
                             isTtsLoading = isTtsLoading,
                             isReplayGenerating = state.isReplayGenerating,
+                            showDebugActions = DebugConfig.SHOW_DEBUG_ACTIONS,
                             onPlayClick = {
                                 val textToRead = """
                                     ${state.report.headline}. 
@@ -119,6 +120,9 @@ fun ReportDetailScreen(
                             },
                             onRegenerateClick = {
                                 viewModel.regenerateReplay(sessionId)
+                            },
+                            onReanalyzeClick = {
+                                viewModel.reanalyzeSession(sessionId)
                             },
                             onVideoClick = { path, subtitle ->
                                 onNavigateToVideo(path, subtitle)

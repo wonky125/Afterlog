@@ -64,8 +64,8 @@ class CameraUseCaseManager @Inject constructor(
 
                 // 3. Setup VideoCapture
                 val qualitySelector = QualitySelector.from(
-                    Quality.HD,
-                    FallbackStrategy.lowerQualityOrHigherThan(Quality.SD)
+                    Quality.FHD,
+                    FallbackStrategy.lowerQualityOrHigherThan(Quality.HD)
                 )
                 val recorder = Recorder.Builder()
                     .setQualitySelector(qualitySelector)

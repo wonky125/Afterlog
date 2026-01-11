@@ -38,6 +38,23 @@ class FileManager @Inject constructor(
         return File(sessionMediaDir, "highlight_${sessionId}_$originalName")
     }
 
+    fun getVideoChunkFile(sessionId: String, timestamp: Long): File {
+        return File(sessionMediaDir, "chunk_${sessionId}_$timestamp.mp4")
+    }
+
+    fun deleteSessionMediaFiles(sessionId: String) {
+        sessionMediaDir.listFiles()
+            ?.filter { it.name.contains(sessionId) }
+            ?.forEach { it.delete() }
+    }
+
+    fun deleteSessionArtifacts(sessionId: String) {
+        val rootFiles = context.filesDir.listFiles().orEmpty()
+        rootFiles.filter { file ->
+            file.isFile && file.name.contains(sessionId) && !file.path.contains("session_media")
+        }.forEach { it.delete() }
+    }
+
     fun clearTempFiles() {
         try {
             tempVideoDir.listFiles()?.forEach { it.delete() }

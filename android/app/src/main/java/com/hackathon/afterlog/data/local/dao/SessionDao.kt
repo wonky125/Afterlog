@@ -29,4 +29,7 @@ interface SessionDao {
 
     @Query("SELECT perspectiveGuideJson FROM sessions WHERE id = :sessionId")
     suspend fun getPerspectiveGuideJson(sessionId: String): String?
+
+    @Query("DELETE FROM sessions WHERE id = :sessionId")
+    suspend fun deleteSession(sessionId: String)
 }
