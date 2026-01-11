@@ -1,17 +1,24 @@
-## 2026-01-07 개발 계획
+﻿## 2026-01-07 개발 계획
 - **목표**: 비디오 합성/재생 완성 + 음성 TTS(READ REPORT), 리포트 생성 시 TTS 포함하여 최종 영상 완성.
 - **모델**: 현재 Gemini 3 Pro Preview(`gemini-3-pro-preview`)를 사용중, 텍스트+음성 동시 분석에 탁월.
 - **기능**: PLAY REEL은 이미지/TTS가 결합된 MP4를 재생. 동영상 하이라이트 있으면 스티칭/합성.
-- **로직**: Rolling Buffer 도입하여 **과거 1.5분**도 저장 (`withAudioEnabled()`).
-- **추가 개선**: 동영상 촬영 시 Gemini 3 Pro가 오디오/비디오를 동시 분석하여 `SRT`(00:00:01,000 대사) 자막을 생성할 수 있는지 MediaMuxer/ExoPlayer 연동 테스트 필요.
-- **비용/성능**: maxOutputTokens=4096 설정, 프레임 제한 40개 유지. 영상 분석 intervalSec 20~30초로 조정 고려.
+- **로직**: Rolling Buffer 도입하여 **과거 1.5분** 저장 (비디오 무음 + 오디오 PCM 별도 기록).
+- **자막**: Gemini 기반 `SRT` 생성 + 하드 자막 번인 적용(Transformer).
+- **비용/성능**: maxOutputTokens=4096 설정, 프레임 제한 40개 유지. 영상 분석 intervalSec 현재 15초 (조정 여지).
 
 ### 체크리스트
-- [x] VideoManager: `.withAudioEnabled()` 및 롤링버퍼 촬영 로직 구현 
+- [x] VideoManager: 롤링버퍼 촬영 + 오디오 PCM 분리 수집 
 - [x] GeminiRepository: 모델명 `gemini-3-pro-preview`로 변경 및 프레임/오디오 전송 구현
 - [x] 동영상 재생 화면 구현: PLAY REEL 클릭시 비디오 플레이어 연결
-- [ ] 자막: 동영상 분석 후 Gemini 3 Pro가 `SRT` 자막 생성 할 수 있는지 확인 및 구현
-- [ ] 오디오/영상 오프셋 조정(optional), 영상 자르기+붙이기 정확도 개선
+- [x] 자막: Gemini 캡션 생성 + SRT 생성 + 하드 자막 번인 적용
+
+### 추후 구현 목록 (미구현)
+- [ ] Sync-Play: 타임라인 로그 클릭 시 해당 시점으로 영상 점프
+- [ ] Speaker diarization: 오디오 구간 분리 + 화자 라벨링 파이프라인
+- [ ] 멀티 디바이스(Host/Guest) + Firebase 동기화
+- [ ] 영상 프레임 전처리/보정(투시 워프, 노이즈/밝기 정규화)
+- [ ] 오디오/영상 오프셋 보정, 스티칭 정확도 개선
+- [ ] Overlay 플로팅 정지 버튼 (현재는 알림 액션 사용)
 
 🎞️ 애프터로그 (Afterlog - Cinematic Replay)
 
@@ -50,7 +57,7 @@ Processing	MediaMuxer/Codec	사진 시퀀스와 TTS 오디오를 결합해 최�
 ① Technical Execution (기술적 실행력 - 40%)
 이 항목은 앱이 얼마나 잘 작동하고 Gemini를 핵심적으로 활용했는지를 평가합니다.
 
-Gemini 3 Pro의 긴 문맥(Long Context) 활용: 3시간 동안 찍힌 수백 장의 사진을 한 번에 분석하여 일관된 서사를 추출하는 능력.
+Gemini 3 Pro의 긴 문맥(Long Context) 활용: 수시간 동안 수집한 데이터를 한 번에 분석하여 일관된 서사를 추출하는 능력.
 멀티 디바이스 동기화: NTP 서버 기반 타임스탬프 보정으로 여러 대의 기기에서 찍은 사진을 하나의 타임라인으로 병합.
 안정적인 백그라운드 서비스: Foreground Service를 사용해 다른 앱 실행 중에도 끊김 없는 데이터 수집 보장.
 
@@ -145,52 +152,52 @@ fun ReplayDetailScreen(videoUri: String, logs: List<InvestigationLog>) {
 }
 Tip
 
-디테일 전략: 배경에 CRT 스캔라인 효과와 지직거리는 어두운 터미널 질감을 입히고, 보고서 전체를 '해킹된 데이터' 형태로 공유하게 하여 몰입감을 극대화합니다.
 
-5. 핵심 데이터 파이프라인 (The Intelligent Pipeline) 🧠
-3시간의 방대한 데이터를 효율적으로 처리하기 위한 2단계 파이프라인 설계입니다.
+5. 핵심 데이터 파이프라인 (The Intelligent Pipeline) ??
+현재 구현 기준의 2단계 파이프라인입니다.
 
-📸 1단계: 수집 (Capture) - "일단 많이 찍어두자"
-트리거: 비명/환호 (데시벨 80dB 이상)
+1단계: 수집 (Capture) - "일단 많이 찍어두자"
+트리거: 비명/환호(80dB 이상) + ROI 모션 감지
 목적: 놓칠 수 있는 중요한 순간을 확보하기 위해 원본 재료를 풍부하게 수집합니다.
 
-시간 동기화 (Time-Sync): 각 기기의 시간 차이를 극복하기 위해 공용 NTP 서버를 기준으로 모든 사진의 타임스탬프를 보정합니다.
+시간 동기화 (Time-Sync): NTP(TimeManager) 기반으로 모든 미디어 타임스탬프를 보정합니다.
 데이터 수집:
-타임랩스 (Dual Strategy):
-촬영 (Viewer용): 5초 간격으로 촬영하여 로컬에 저장 (부드러운 영상 재생 목적).
-분석 (AI용): 15초 간격으로 선별(Sampling)하여 Gemini에 전송 (토큰 비용 절감 및 맥락 파악 극대화).
-오디오 녹음: 게임 시작부터 종료까지 전체 오디오를 통으로 녹음 (AAC/MP3, 저용량 코덱 권장).
-비디오 트리거 (Hybrid): 비명(80dB+) 감지 시 전 2.5분 + 후 2.5분 = 총 5분 영상 클립을 로컬에 저장합니다. (Rolling Buffer 활용)
+타임랩스: 5초 간격 이미지 저장 (Viewer용/리플레이 fallback).
+비디오 청크: 30초 MP4 단위로 기록, 롤링 버퍼 6개(약 3분).
+하이라이트 승격: 비명 감지 시 전 90초 + 후 90초 = 총 3분 저장. ROI 모션은 청크 finalize 시 임계값 기반 승격(쿨다운 60초).
+오디오 녹음: 게임 전체 PCM 수집, 필요 시 WAV 변환 후 업로드.
+AI 분석 입력: 15초 간격 키프레임(최대 40장, 512px 리사이즈) + 오디오 파일 URI.
 Note
 
-비명 기반 수집의 역할: 경찰이 현장 보존을 위해 일단 사진 100장을 찍어두는 것처럼, 데시벨 트리거는 "혹시 놓칠까봐" 원본을 확보하는 안전망입니다.
+비명/모션 기반 수집의 역할: 안전망으로 원본을 확보해 두고, AI가 의미 있는 구간을 선택할 수 있게 합니다.
 
-✂️ 2단계: 편집 (Edit) - "진짜 중요한 건 이거야"
-트리거: AI가 생성한 로그의 타임스탬프
-목적: 수집된 방대한 원본 중 맥락상 의미 있는 하이라이트만 최종 선별합니다.
+2단계: 편집 (Edit) - "진짜 중요한 건 이거야"
+트리거: 세션 분석 요청 시점
+목적: 수집된 원본에서 의미 있는 하이라이트와 서사를 생성합니다.
 
 Context Injection (Gemini 3.0 Pro):
-Files API 업로드: 3시간 분량의 오디오 파일(약 200MB)을 File API를 통해 구글 서버에 먼저 업로드하고 URI를 획득합니다.
-멀티모달 프롬프트: "이 오디오(URI)와 이 사진들(Images)을 보고 사건 일지를 작성해. 목소리가 다른 사람을 Speaker A, B로 구분해줘."라고 요청합니다.
-Gemini Native Diarization: 별도 알고리즘 없이 Gemini가 내장된 청각 지능으로 화자를 구분하고 대본을 작성합니다.
+Files API 업로드: PCM -> WAV 변환 후 Files API로 업로드하여 오디오 URI 확보.
+멀티모달 프롬프트: 키프레임 + 오디오 기반 리포트 JSON(헤드라인/요약/타임라인/판결) 생성.
+Gemini Native Diarization: 현재 미구현(화자 라벨은 프롬프트 기반 생성).
 멀티모달 출력 (Accessibility):
-생성된 텍스트 리플레이를 Google Cloud TTS를 통해 성우 같은 목소리로 읽어주어 시각 약자를 배려하고 몰입감을 극대화합니다.
+생성된 텍스트 리플레이를 Google Cloud TTS로 낭독.
 영상 합성 (Video Synthesis - Hybrid):
-Priority 1 (Video): 로컬 Rolling Buffer 영상이 있는 구간은 실제 비디오 클립을 사용합니다 (Sound & Motion 포함).
-Priority 2 (Timelapse): 영상이 없는 구간은 5초 간격 타임랩스 사진을 이어 붙여 처리합니다.
-MediaMuxer로 이들을 TTS 오디오와 매끄러운 MP4로 최종 병합합니다.
+Priority 1 (Highlight Video): 하이라이트 영상 스티칭 + 오디오 오버레이.
+Priority 2 (Slideshow): 하이라이트가 없으면 키프레임/타임랩스 기반 슬라이드쇼 합성.
+자막: Gemini 캡션 -> SRT 생성 -> Media3 Transformer로 하드 자막 번인.
 Tip
 
-2단계 파이프라인 비유: 탐정이 현장 사진 100장 중 "결정적 증거 5장"만 골라서 보고서에 싣는 것처럼, AI 로그는 최종 결과물에 무엇을 포함할지 판단하는 편집자 역할을 합니다.
+2단계 파이프라인 비유: 탐정이 현장 사진 100장 중 "결정적 증거 5장"만 골라 보고서에 싣는 것처럼, AI 로그가 최종 결과물에 무엇을 포함할지 판단합니다.
 
-6. 상세 프로덕션 로드맵 (Production Roadmap) 🚀
+6. 상세 프로덕션 로드맵 (Production Roadmap) ??
 단계	기간	핵심 과제 및 심사 기준 연계	버퍼/주의사항
-1주	기반 구축	안드로이드 프로젝트 세팅, CameraX 및 Gemini API 기본 호출 성공 (✅ 완료)	-
-2주	감각 기관	AudioRecord 비명 감지 및 Rolling Buffer (5분 영상) 구현 (✅ 완료)	⚠️ 안드로이드 12+ 마이크 권한 제약 확인 필요
-3주	백그라운드	Foreground Service 및 Overlay 플로팅 버튼 구현 (✅ 완료)	2주차에서 분리하여 안정성 확보
-4주	연결	Firebase Host-Guest 동기화 + NTP 타임스탬프 보정 (✅ NTP 완료)	-
-5주	지능 부여	Gemini 프롬프트 튜닝 + TTS + 영상 합성 (MediaMuxer)	데모 영상 촬영 병행 시작
+1주	기반 구축	안드로이드 프로젝트 세팅, CameraX 및 Gemini API 기본 호출 성공 (완료)	-
+2주	감각 기관	AudioRecord 비명 감지 + 30초 청크/3분 롤링버퍼 + 하이라이트 승격 (완료)	안드로이드 12+ 마이크 권한 제약 확인 필요
+3주	백그라운드	Foreground Service + 알림 액션 정지 (완료), Overlay 플로팅 버튼 (미구현)	2주차에서 분리하여 안정성 확보
+4주	연결	NTP 타임스탬프 보정 (완료), Firebase Host-Guest 동기화 (미구현)	-
+5주	지능 부여	Gemini 프롬프트 튜닝 + TTS + 영상 합성 + 자막 번인 (완료)	데모 영상 촬영 병행 시작
 6주	완성 & 제출	매거진 UI 폴리싱, 3시간 플레이 테스트, 최종 영상 편집	버그 수정 버퍼 확보
+
 7. 위험 관리 전략 (Risk Management) ⚠️
 Tip
 

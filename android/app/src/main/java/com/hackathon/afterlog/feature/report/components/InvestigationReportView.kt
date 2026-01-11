@@ -30,6 +30,7 @@ fun InvestigationReportView(
     isTtsLoading: Boolean = false,
     isReplayGenerating: Boolean = false,
     onPlayClick: () -> Unit = {},
+    onRegenerateClick: () -> Unit = {},
     onVideoClick: (String, String?) -> Unit = { _, _ -> }
 ) {
     Box(modifier = Modifier.fillMaxSize()) {
@@ -39,6 +40,40 @@ fun InvestigationReportView(
                     .fillMaxSize()
                     .padding(24.dp)
             ) {
+                if (videoPath != null) {
+                    item {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 24.dp)
+                        ) {
+                            NoirSectionHeader("MOVING PICTURE EVIDENCE")
+                            InlineVideoPlayer(
+                                videoPath = videoPath,
+                                subtitlePath = subtitlePath,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .aspectRatio(16f / 9f)
+                                    .border(1.dp, NoirColors.Border)
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            NoirButton(
+                                text = if (isReplayGenerating) "GENERATING..." else "PLAY REEL",
+                                onClick = { onVideoClick(videoPath, subtitlePath) },
+                                modifier = Modifier.fillMaxWidth(),
+                                enabled = !isReplayGenerating
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            NoirButton(
+                                text = if (isReplayGenerating) "REGENERATING..." else "REGENERATE REEL",
+                                onClick = onRegenerateClick,
+                                modifier = Modifier.fillMaxWidth(),
+                                enabled = !isReplayGenerating
+                            )
+                        }
+                    }
+                }
+
                 // ... (Existing Header, Headline, Summary) ...
                 // Newspaper Header
                 item {
@@ -52,7 +87,7 @@ fun InvestigationReportView(
                             color = NoirColors.TextHeading
                         )
                         Spacer(modifier = Modifier.height(8.dp))
-                        Divider(color = NoirColors.BloodRed, thickness = 2.dp)
+                        HorizontalDivider(color = NoirColors.BloodRed, thickness = 2.dp)
                         Spacer(modifier = Modifier.height(4.dp))
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -63,7 +98,7 @@ fun InvestigationReportView(
                             Text("EST. 1872", style = NewspaperTypography.caption, color = NoirColors.TextSecondary)
                         }
                         Spacer(modifier = Modifier.height(4.dp))
-                        Divider(color = NoirColors.Border, thickness = 1.dp)
+                        HorizontalDivider(color = NoirColors.Border, thickness = 1.dp)
                     }
                 }
 
@@ -85,21 +120,6 @@ fun InvestigationReportView(
                         color = NoirColors.TextBody,
                         modifier = Modifier.padding(bottom = 24.dp)
                     )
-                }
-
-                // Video Evidence (New)
-                if (videoPath != null) {
-                    item {
-                        NoirSectionHeader("MOVING PICTURE EVIDENCE")
-                        // Simplified Video Placeholder / Launcher
-                        NoirButton(
-                            text = if (isReplayGenerating) "GENERATING..." else "PLAY REEL",
-                            onClick = { onVideoClick(videoPath, subtitlePath) },
-                            modifier = Modifier.fillMaxWidth(),
-                            enabled = !isReplayGenerating
-                        )
-                        Spacer(modifier = Modifier.height(24.dp))
-                    }
                 }
 
                 // Main Image

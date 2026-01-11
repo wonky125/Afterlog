@@ -8,15 +8,20 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.hackathon.afterlog.feature.guide.GuideScreen
+import com.hackathon.afterlog.feature.guide.GuideViewModel
 import com.hackathon.afterlog.feature.home.HomeScreen
+import com.hackathon.afterlog.feature.home.HomeViewModel
 import com.hackathon.afterlog.ui.navigation.Screen
 import com.hackathon.afterlog.feature.report.ReportDetailScreen
 import com.hackathon.afterlog.feature.report.components.VideoPlayerScreen
 import com.hackathon.afterlog.ui.theme.AfterLogTheme
+import androidx.hilt.navigation.compose.hiltViewModel
 import dagger.hilt.android.AndroidEntryPoint
 
 @AndroidEntryPoint
@@ -51,7 +56,23 @@ class MainActivity : ComponentActivity() {
                             HomeScreen(
                                 onNavigateToReport = { sessionId ->
                                     navController.navigate(Screen.ReportDetail.createRoute(sessionId))
+                                },
+                                onNavigateToGuide = {
+                                    navController.navigate(Screen.Guide.route)
                                 }
+                            )
+                        }
+                        composable(Screen.Guide.route) { backStackEntry ->
+                            val parentEntry = remember(backStackEntry) {
+                                navController.getBackStackEntry(Screen.Home.route)
+                            }
+                            val homeViewModel: HomeViewModel = hiltViewModel(parentEntry)
+                            val guideViewModel: GuideViewModel = hiltViewModel()
+                            GuideScreen(
+                                homeViewModel = homeViewModel,
+                                guideViewModel = guideViewModel,
+                                onConfirm = { navController.popBackStack() },
+                                onCancel = { navController.popBackStack() }
                             )
                         }
                         composable(

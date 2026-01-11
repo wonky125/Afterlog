@@ -11,7 +11,6 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -30,10 +29,10 @@ import com.hackathon.afterlog.ui.theme.PlayfairDisplayFamily
 @Composable
 fun HomeScreen(
     onNavigateToReport: (String) -> Unit,
+    onNavigateToGuide: () -> Unit,
     viewModel: HomeViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
     var hasPermissions by remember { mutableStateOf(checkPermissions(context)) }
 
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -110,106 +109,35 @@ fun HomeScreen(
                     )
                 }
             } else {
-                val guide by viewModel.guideConfig.collectAsState()
-                val lowPowerHint by viewModel.lowPowerHint.collectAsState()
-                var showPreview by remember { mutableStateOf(false) }
-
-                NoirSectionHeader("PERSPECTIVE GUIDE")
+                NoirSectionHeader("CAPTURE CONTROL")
                 NoirCard(modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         Text(
-                            text = "Align the four corners to help Afterlog observe your board edges.",
+                            text = "Start a session to align your board with the perspective guide.",
                             style = NoirTypography.body,
                             color = NoirColors.TextBody
                         )
-                        Spacer(modifier = Modifier.height(12.dp))
-                        PerspectiveGuideEditor(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(220.dp),
-                            config = guide,
-                            onGuideChanged = viewModel::setGuide
-                        )
-                        Spacer(modifier = Modifier.height(12.dp))
+                        Spacer(modifier = Modifier.height(16.dp))
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            horizontalArrangement = Arrangement.spacedBy(16.dp)
                         ) {
                             NoirButton(
-                                text = "CONFIRM LAYOUT",
-                                onClick = viewModel::confirmLayout,
+                                text = "START\nARCHIVE",
+                                onClick = onNavigateToGuide,
                                 modifier = Modifier.weight(1f)
                             )
                             NoirButton(
-                                text = "OPEN MINI PREVIEW",
-                                onClick = { showPreview = true },
+                                text = "STOP\nARCHIVE",
+                                onClick = {
+                                    val intent = Intent(context, AfterLogService::class.java)
+                                    context.stopService(intent)
+                                    Toast.makeText(context, "Archive Stopped", Toast.LENGTH_SHORT).show()
+                                },
                                 modifier = Modifier.weight(1f)
                             )
                         }
-                        Spacer(modifier = Modifier.height(12.dp))
-                        AutoLevelIndicator(modifier = Modifier.fillMaxWidth())
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Text(
-                            text = lowPowerHint,
-                            style = NoirTypography.caption,
-                            color = NoirColors.TextSecondary
-                        )
                     }
-                }
-
-                if (showPreview) {
-                    LayoutPreviewDialog(
-                        guide = guide,
-                        onDismiss = { showPreview = false }
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(24.dp))
-
-                NoirSectionHeader("MONITORING PROTOCOLS")
-                
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    NoirButton(
-                        text = "START ARCHIVE",
-                        onClick = {
-                            val layoutGuide = guide
-                            viewModel.confirmLayout()
-                            scope.launch {
-                                try {
-                                    val sessionId = viewModel.createNewSession()
-                                    viewModel.persistGuide(sessionId)
-                                    val intent = Intent(context, AfterLogService::class.java).apply {
-                                        putExtra(AfterLogService.EXTRA_SESSION_ID, sessionId)
-                                        putExtra(
-                                            AfterLogService.EXTRA_PERSPECTIVE_GUIDE,
-                                            layoutGuide.toSerializedString()
-                                        )
-                                    }
-                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                                        context.startForegroundService(intent)
-                                    } else {
-                                        context.startService(intent)
-                                    }
-                                    Toast.makeText(context, "Archive Started", Toast.LENGTH_SHORT).show()
-                                } catch (e: Exception) {
-                                    Toast.makeText(context, "Failed to start session: ${e.message}", Toast.LENGTH_LONG).show()
-                                }
-                            }
-                        },
-                        modifier = Modifier.weight(1f)
-                    )
-                    NoirButton(
-                        text = "STOP ARCHIVE",
-                        onClick = {
-                            val intent = Intent(context, AfterLogService::class.java)
-                            context.stopService(intent)
-                            Toast.makeText(context, "Archive Stopped", Toast.LENGTH_SHORT).show()
-                        },
-                        modifier = Modifier.weight(1f)
-                    )
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))

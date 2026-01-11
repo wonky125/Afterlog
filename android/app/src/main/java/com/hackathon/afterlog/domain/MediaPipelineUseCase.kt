@@ -2,6 +2,7 @@ package com.hackathon.afterlog.domain
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.Color
 import android.media.MediaMetadataRetriever
 import android.util.Log
 import com.hackathon.afterlog.data.media.VideoSynthesizer
@@ -11,6 +12,7 @@ import com.hackathon.afterlog.data.repository.LocalRepository
 import com.hackathon.afterlog.data.repository.TtsRepository
 import com.hackathon.afterlog.data.local.entities.MediaType
 import com.hackathon.afterlog.data.local.entities.MediaLogEntity
+import com.hackathon.afterlog.data.model.PerspectiveGuideConfig
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -22,6 +24,7 @@ import java.io.FileOutputStream
 import javax.inject.Inject
 import javax.inject.Singleton
 import androidx.media3.common.util.UnstableApi
+import kotlin.math.abs
 
 /**
  * MediaPipelineUseCase: Orchestrates the full "Cinematic Replay" generation pipeline.
@@ -53,6 +56,11 @@ class MediaPipelineUseCase @Inject constructor(
     data class ReplayAssets(
         val videoFile: File,
         val subtitleFile: File?
+    )
+
+    data class SubtitlePackage(
+        val file: File,
+        val cues: List<VideoStitcher.CaptionCue>
     )
     
     /**
@@ -115,16 +123,32 @@ class MediaPipelineUseCase @Inject constructor(
             
             Log.d(TAG, "✅ TTS complete: ${narrationAudio.length()} bytes")
             
-            val finalVideo = buildFinalVideo(sessionId, videos, narrationAudio, audioFile, sessionStart)
+            val selectedSegments = resolveHighlightSegments(sessionId, videos, sessionStart)
+            val finalVideo = buildFinalVideo(
+                sessionId = sessionId,
+                videos = videos,
+                narrationAudio = narrationAudio,
+                audioLog = audioFile,
+                sessionStart = sessionStart,
+                selectedHighlightSegments = selectedSegments
+            )
 
             if (finalVideo == null || !finalVideo.exists()) {
                 Log.e(TAG, "Video generation failed (both stitcher and synthesizer)")
                 return@withContext Result.failure(IllegalStateException("Final video generation failed. Check logs."))
             }
             
-            val subtitleFile = createSubtitleFile(sessionId, audioFile, narrationAudio)
-            Log.d(TAG, "🎉 Replay generation complete: ${finalVideo.absolutePath}")
-            return@withContext Result.success(ReplayAssets(finalVideo, subtitleFile))
+            val subtitlePackage = createSubtitlePackage(
+                sessionId = sessionId,
+                audioLog = audioFile,
+                fallbackAudio = narrationAudio,
+                sessionStart = sessionStart,
+                highlightSegments = selectedSegments
+            )
+            val outputVideo = burnInSubtitlesIfNeeded(sessionId, finalVideo, subtitlePackage)
+            val cappedVideo = trimReplayIfNeeded(sessionId, outputVideo)
+            Log.d(TAG, "🎉 Replay generation complete: ${cappedVideo.absolutePath}")
+            return@withContext Result.success(ReplayAssets(cappedVideo, subtitlePackage?.file))
             
         } catch (e: Exception) {
             Log.e(TAG, "Pipeline failed", e)
@@ -138,7 +162,7 @@ class MediaPipelineUseCase @Inject constructor(
     suspend fun generateReplayWithNarration(
         sessionId: String,
         narrationText: String
-    ): Result<File> = withContext(Dispatchers.IO) {
+    ): Result<ReplayAssets> = withContext(Dispatchers.IO) {
         Log.d(TAG, "Starting replay generation (narration provided) for session: $sessionId")
 
         try {
@@ -163,14 +187,30 @@ class MediaPipelineUseCase @Inject constructor(
                 return@withContext Result.failure(IllegalStateException("TTS Synthesis failed."))
             }
 
-            val finalVideo = buildFinalVideo(sessionId, videos, narrationAudio, audioFile, sessionStart)
+            val selectedSegments = resolveHighlightSegments(sessionId, videos, sessionStart)
+            val finalVideo = buildFinalVideo(
+                sessionId = sessionId,
+                videos = videos,
+                narrationAudio = narrationAudio,
+                audioLog = audioFile,
+                sessionStart = sessionStart,
+                selectedHighlightSegments = selectedSegments
+            )
             if (finalVideo == null || !finalVideo.exists()) {
                 return@withContext Result.failure(IllegalStateException("Final video generation failed."))
             }
 
-            val subtitleFile = createSubtitleFile(sessionId, audioFile, narrationAudio)
-            Log.d(TAG, "Replay generation (narration) complete: ${finalVideo.absolutePath}")
-            return@withContext Result.success(ReplayAssets(finalVideo, subtitleFile))
+            val subtitlePackage = createSubtitlePackage(
+                sessionId = sessionId,
+                audioLog = audioFile,
+                fallbackAudio = narrationAudio,
+                sessionStart = sessionStart,
+                highlightSegments = selectedSegments
+            )
+            val outputVideo = burnInSubtitlesIfNeeded(sessionId, finalVideo, subtitlePackage)
+            val cappedVideo = trimReplayIfNeeded(sessionId, outputVideo)
+            Log.d(TAG, "Replay generation (narration) complete: ${cappedVideo.absolutePath}")
+            return@withContext Result.success(ReplayAssets(cappedVideo, subtitlePackage?.file))
         } catch (e: Exception) {
             Log.e(TAG, "Pipeline failed (narration provided)", e)
             return@withContext Result.failure(e)
@@ -203,45 +243,222 @@ class MediaPipelineUseCase @Inject constructor(
         }
     }
 
-    private suspend fun createSubtitleFile(
+    private suspend fun createSubtitlePackage(
         sessionId: String,
         audioLog: MediaLogEntity?,
-        fallbackAudio: File?
-    ): File? {
-        val audioSource = audioLog?.let { File(it.filePath) } ?: fallbackAudio
+        fallbackAudio: File?,
+        sessionStart: Long?,
+        highlightSegments: List<VideoSegment>
+    ): SubtitlePackage? {
+        val useNarrationAudio = highlightSegments.isEmpty() && fallbackAudio != null
+        val audioSource = when {
+            useNarrationAudio -> fallbackAudio
+            audioLog != null -> File(audioLog.filePath)
+            else -> fallbackAudio
+        }
         if (audioSource == null || !audioSource.exists()) {
             Log.w(TAG, "Subtitle generation skipped: no audio source for $sessionId")
             return null
         }
 
-        val captions = geminiRepository.generateNoirCaptions(audioSource)
-        if (captions.isEmpty()) {
+        val eventHints = buildCaptionHints(sessionId, sessionStart)
+        val captions = geminiRepository.generateNoirCaptions(audioSource, eventHints)
+        val cleanedCaptions = captions.mapNotNull { line ->
+            val text = line.text.replace("\n", " ").trim()
+            if (text.isBlank()) null else GeminiRepository.CaptionLine(line.startMs, line.endMs, text)
+        }
+
+        val sortedCaptions = cleanedCaptions.sortedBy { it.startMs }
+
+        val audioOffsetMs = if (useNarrationAudio) {
+            0L
+        } else {
+            computeAudioOffsetMs(audioLog, sessionStart)
+        }
+        val baseCues = sortedCaptions.map { line ->
+            val rawStart = line.startMs.coerceAtLeast(0L)
+            val rawEnd = maxOf(line.endMs, rawStart + 1500L)
+            val startMs = rawStart + audioOffsetMs
+            val endMs = rawEnd + audioOffsetMs
+            VideoStitcher.CaptionCue(startMs = startMs, endMs = endMs, text = line.text)
+        }
+
+        val fallbackCues = buildFallbackCuesFromSegments(highlightSegments)
+
+        if (baseCues.isEmpty() && fallbackCues.isEmpty()) {
             Log.d(TAG, "No captions generated for session $sessionId")
             return null
         }
 
+        val canMapToSegments = highlightSegments.isNotEmpty() && !useNarrationAudio && audioLog != null && sessionStart != null
+        val mappedCues = if (baseCues.isNotEmpty() && canMapToSegments) {
+            remapCuesToSegments(baseCues, highlightSegments)
+        } else {
+            baseCues
+        }
+
+        val finalCues = when {
+            mappedCues.isNotEmpty() -> mappedCues
+            fallbackCues.isNotEmpty() -> fallbackCues
+            else -> emptyList()
+        }
+
+        if (finalCues.isEmpty()) {
+            Log.d(TAG, "Caption mapping yielded zero cues for session $sessionId")
+            return null
+        }
+
+        val srtContent = buildSrtTextFromCues(finalCues)
+        if (srtContent.isBlank()) {
+            Log.w(TAG, "Generated SRT content is empty for session $sessionId")
+            return null
+        }
         val subtitleFile = File(context.filesDir, "replay_${sessionId}.srt")
-        subtitleFile.writeText(buildSrtText(captions))
+        subtitleFile.parentFile?.mkdirs()
+        subtitleFile.writeText(srtContent)
+        localRepository.deleteLogsBySessionAndType(sessionId, MediaType.SUBTITLE)
         localRepository.logMedia(
             sessionId = sessionId,
             type = MediaType.SUBTITLE,
             filePath = subtitleFile.absolutePath
         )
+
         Log.d(TAG, "Subtitle saved: ${subtitleFile.name}")
-        return subtitleFile
+        return SubtitlePackage(subtitleFile, finalCues)
+    }
+
+    private suspend fun buildCaptionHints(
+        sessionId: String,
+        sessionStart: Long?
+    ): List<String> {
+        val logs = localRepository.getSessionLogs(sessionId)
+        val screams = logs.filter { it.type == MediaType.SCREAM_EVENT && it.decibel != null }
+        if (screams.isEmpty()) {
+            return emptyList()
+        }
+
+        return screams
+            .sortedBy { it.timestamp }
+            .take(8)
+            .mapNotNull { event ->
+                val decibel = event.decibel ?: return@mapNotNull null
+                val relativeMs = sessionStart?.let { start -> (event.timestamp - start).coerceAtLeast(0) }
+                val timeLabel = relativeMs?.let { formatSrtTimestamp(it).substring(0, 8) }
+                    ?: "t=${event.timestamp}"
+                "$timeLabel ${decibel}dB spike"
+            }
     }
 
     private fun buildSrtText(captions: List<GeminiRepository.CaptionLine>): String {
         return buildString {
-            captions.forEachIndexed { index, line ->
+            var counter = 1
+            captions.forEach { line ->
+                val cleanedText = line.text.replace("\n", " ").trim()
+                if (cleanedText.isBlank()) return@forEach
                 val startMs = line.startMs.coerceAtLeast(0L)
                 val endMs = maxOf(line.endMs, startMs + 1500L)
-                append("${index + 1}\n")
+                append("${counter++}\n")
                 append("${formatSrtTimestamp(startMs)} --> ${formatSrtTimestamp(endMs)}\n")
-                append(line.text.replace("\n", " ").trim())
+                append(cleanedText)
                 append("\n\n")
             }
         }
+    }
+
+    private fun buildSrtTextFromCues(cues: List<VideoStitcher.CaptionCue>): String {
+        return buildString {
+            var counter = 1
+            cues.sortedBy { it.startMs }.forEach { cue ->
+                val cleanedText = cue.text.replace("\n", " ").trim()
+                if (cleanedText.isBlank()) return@forEach
+                val startMs = cue.startMs.coerceAtLeast(0L)
+                val endMs = maxOf(cue.endMs, startMs + 500L)
+                append("${counter++}\n")
+                append("${formatSrtTimestamp(startMs)} --> ${formatSrtTimestamp(endMs)}\n")
+                append(cleanedText)
+                append("\n\n")
+            }
+        }
+    }
+
+    private fun computeAudioOffsetMs(audioLog: MediaLogEntity?, sessionStart: Long?): Long {
+        return if (audioLog != null && sessionStart != null) {
+            (audioLog.timestamp - sessionStart).coerceAtLeast(0L)
+        } else {
+            0L
+        }
+    }
+
+    private fun remapCuesToSegments(
+        cues: List<VideoStitcher.CaptionCue>,
+        segments: List<VideoSegment>
+    ): List<VideoStitcher.CaptionCue> {
+        if (segments.isEmpty()) return cues
+
+        val orderedSegments = segments.sortedBy { it.startMs }
+        val orderedCues = cues.sortedBy { it.startMs }
+        val remapped = mutableListOf<VideoStitcher.CaptionCue>()
+        var timelineOffset = 0L
+
+        orderedSegments.forEach { segment ->
+            val segDuration = segment.durationMs.coerceAtLeast(0L)
+            val segStart = segment.startMs
+            val segEnd = segStart + segDuration
+
+            orderedCues.forEach { cue ->
+                if (cue.endMs <= segStart || cue.startMs >= segEnd) return@forEach
+                val clipStart = maxOf(cue.startMs, segStart)
+                val clipEnd = minOf(cue.endMs, segEnd)
+                if (clipEnd <= clipStart) return@forEach
+
+                val newStart = timelineOffset + (clipStart - segStart)
+                val newEnd = timelineOffset + (clipEnd - segStart)
+                remapped.add(cue.copy(startMs = newStart, endMs = newEnd))
+            }
+
+            timelineOffset += segDuration
+        }
+
+        return remapped.sortedBy { it.startMs }
+    }
+
+    private fun buildFallbackCuesFromSegments(
+        segments: List<VideoSegment>
+    ): List<VideoStitcher.CaptionCue> {
+        if (segments.isEmpty()) return emptyList()
+
+        val phrases = listOf(
+            "FATE STIRS",
+            "SILENCE BREAKS",
+            "A CLUE EMERGES",
+            "SHADOWS SHIFT",
+            "VERDICT NEARS"
+        )
+        val orderedSegments = segments.sortedBy { it.startMs }
+        val fallback = mutableListOf<VideoStitcher.CaptionCue>()
+        var timelineOffset = 0L
+
+        orderedSegments.forEachIndexed { index, segment ->
+            val duration = segment.durationMs.coerceAtLeast(0L)
+            if (duration < 500L) {
+                timelineOffset += duration
+                return@forEachIndexed
+            }
+            val startMs = timelineOffset + (duration / 2)
+            val endMs = minOf(timelineOffset + duration, startMs + 1500L)
+            if (endMs > startMs) {
+                fallback.add(
+                    VideoStitcher.CaptionCue(
+                        startMs = startMs,
+                        endMs = endMs,
+                        text = phrases[index % phrases.size]
+                    )
+                )
+            }
+            timelineOffset += duration
+        }
+
+        return fallback
     }
 
     private fun formatSrtTimestamp(ms: Long): String {
@@ -253,12 +470,63 @@ class MediaPipelineUseCase @Inject constructor(
         return String.format("%02d:%02d:%02d,%03d", hours, minutes, seconds, milliseconds)
     }
 
+    private suspend fun burnInSubtitlesIfNeeded(
+        sessionId: String,
+        baseVideo: File,
+        subtitlePackage: SubtitlePackage?
+    ): File {
+        if (subtitlePackage == null) {
+            return baseVideo
+        }
+
+        val burnResult = if (subtitlePackage.file.exists()) {
+            videoStitcher.burnInSubtitlesFromSrt(
+                inputVideo = baseVideo,
+                subtitleFile = subtitlePackage.file,
+                outputSessionId = sessionId
+            )
+        } else {
+            videoStitcher.burnInSubtitles(
+                inputVideo = baseVideo,
+                cues = subtitlePackage.cues,
+                outputSessionId = sessionId
+            )
+        }
+
+        val burnedVideo = burnResult.getOrNull()
+        return if (burnedVideo != null && burnedVideo.exists()) {
+            burnedVideo
+        } else {
+            Log.w(TAG, "Subtitle burn-in failed; falling back to base video.")
+            baseVideo
+        }
+    }
+
+    private suspend fun trimReplayIfNeeded(
+        sessionId: String,
+        baseVideo: File
+    ): File {
+        val trimResult = videoStitcher.trimVideoToMaxDuration(
+            inputVideo = baseVideo,
+            maxDurationMs = MAX_REPLAY_DURATION_MS,
+            outputSessionId = sessionId
+        )
+        val trimmedVideo = trimResult.getOrNull()
+        return if (trimmedVideo != null && trimmedVideo.exists()) {
+            trimmedVideo
+        } else {
+            Log.w(TAG, "Replay trim skipped or failed; using base video.")
+            baseVideo
+        }
+    }
+
     private suspend fun buildFinalVideo(
         sessionId: String,
         videos: List<MediaLogEntity>,
         narrationAudio: File,
         audioLog: MediaLogEntity?,
-        sessionStart: Long?
+        sessionStart: Long?,
+        selectedHighlightSegments: List<VideoSegment>
     ): File? {
         val highlightVideos = videos.filter { it.type == MediaType.VIDEO_HIGHLIGHT }
         val allVideoFiles = videos.map { File(it.filePath) }.filter { it.exists() }
@@ -266,11 +534,19 @@ class MediaPipelineUseCase @Inject constructor(
         Log.d(TAG, "Hybrid Mode: ${highlightVideos.size} highlights, ${allVideoFiles.size} total videos")
 
         Log.d(TAG, "Segments: highlights=${highlightVideos.size}, totalVideoFiles=${allVideoFiles.size}")
-        return when {
-            highlightVideos.isNotEmpty() -> {
-                val segments = buildVideoSegments(highlightVideos, sessionStart)
-                Log.d(TAG, "Video segments=${segments.size}, sessionStart=$sessionStart")
-                val highlightFiles = segments.map { it.file }.filter { it.exists() }
+
+        if (highlightVideos.isNotEmpty()) {
+            val segments = if (selectedHighlightSegments.isNotEmpty()) {
+                selectedHighlightSegments
+            } else {
+                buildVideoSegments(highlightVideos, sessionStart)
+            }
+            Log.d(
+                TAG,
+                "Video segments=${segments.size}, sessionStart=$sessionStart"
+            )
+            val highlightFiles = segments.map { it.file }.filter { it.exists() }
+            if (highlightFiles.isNotEmpty()) {
                 val pcmFile = audioLog?.let { File(it.filePath) }?.takeIf { it.exists() }
 
                 val audioStartOffsetMs = if (audioLog != null && sessionStart != null) {
@@ -280,7 +556,9 @@ class MediaPipelineUseCase @Inject constructor(
                 }
 
                 val stitchResult = if (pcmFile != null && segments.isNotEmpty() && audioStartOffsetMs != null) {
-                    val clips = segments.map { VideoStitcher.AudioClip(startMs = it.startMs, durationMs = it.durationMs) }
+                    val clips = segments.map {
+                        VideoStitcher.AudioClip(startMs = it.startMs, durationMs = it.durationMs)
+                    }
                     Log.d(TAG, "Audio clips=${clips.size} startOffset=$audioStartOffsetMs pcmPath=${pcmFile.absolutePath}")
                     videoStitcher.stitchVideosWithAudioSegments(
                         videoChunks = highlightFiles,
@@ -297,26 +575,59 @@ class MediaPipelineUseCase @Inject constructor(
                     )
                 }
 
-                stitchResult.getOrNull()
+                return stitchResult.getOrNull()
+            } else {
+                Log.w(TAG, "Highlight logs present but no valid files; falling back to non-highlight path.")
             }
-            allVideoFiles.isNotEmpty() -> {
-                Log.d(TAG, "Using VideoSynthesizer slideshow (no highlights)")
-                val keyframes = extractKeyframesFromVideos(allVideoFiles)
-
-                if (keyframes.isEmpty()) {
-                    Log.w(TAG, "No keyframes extracted from video chunks")
-                    null
-                } else {
-                    videoSynthesizer.synthesize(
-                        outputSessionId = sessionId,
-                        audioFile = narrationAudio,
-                        images = keyframes,
-                        imageDurationSec = 5
-                    )
-                }
-            }
-            else -> null
         }
+
+        if (allVideoFiles.isNotEmpty()) {
+            Log.d(TAG, "Using VideoSynthesizer slideshow (no highlights)")
+            val keyframes = extractKeyframesFromVideos(allVideoFiles)
+
+            return if (keyframes.isEmpty()) {
+                Log.w(TAG, "No keyframes extracted from video chunks")
+                null
+            } else {
+                videoSynthesizer.synthesize(
+                    outputSessionId = sessionId,
+                    audioFile = narrationAudio,
+                    images = keyframes,
+                    imageDurationSec = 5
+                )
+            }
+        }
+
+        val imageLogs = localRepository.getSessionLogs(sessionId)
+            .filter { it.type == MediaType.IMAGE }
+            .sortedBy { it.timestamp }
+        val imageFiles = imageLogs.map { File(it.filePath) }.filter { it.exists() }
+
+        return if (imageFiles.isNotEmpty()) {
+            Log.d(TAG, "Using image fallback (${imageFiles.size} images) for replay")
+            videoSynthesizer.synthesize(
+                outputSessionId = sessionId,
+                audioFile = narrationAudio,
+                images = imageFiles,
+                imageDurationSec = 5
+            )
+        } else {
+            Log.w(TAG, "No video or image files available for replay")
+            null
+        }
+    }
+
+    private suspend fun resolveHighlightSegments(
+        sessionId: String,
+        videos: List<MediaLogEntity>,
+        sessionStart: Long?
+    ): List<VideoSegment> {
+        val highlightVideos = videos.filter { it.type == MediaType.VIDEO_HIGHLIGHT }
+        if (highlightVideos.isEmpty()) {
+            return emptyList()
+        }
+        val segments = buildVideoSegments(highlightVideos, sessionStart)
+        return selectSegmentsByImportance(sessionId, segments)
     }
 
 /**
@@ -356,7 +667,13 @@ class MediaPipelineUseCase @Inject constructor(
     private data class VideoSegment(
         val file: File,
         val startMs: Long,
-        val durationMs: Long
+        val durationMs: Long,
+        val absoluteStartMs: Long
+    )
+
+    private data class RankedSegment(
+        val segment: VideoSegment,
+        val score: Float
     )
 
     private fun buildVideoSegments(
@@ -370,12 +687,24 @@ class MediaPipelineUseCase @Inject constructor(
 
             val durationMs = try {
                 val retriever = MediaMetadataRetriever()
-                retriever.setDataSource(file.absolutePath)
-                val dur = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
-                retriever.release()
-                dur
+                try {
+                    retriever.setDataSource(file.absolutePath)
+                    retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+                } finally {
+                    try {
+                        retriever.release()
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Failed to release retriever for ${file.name}", e)
+                    }
+                }
             } catch (e: Exception) {
                 0L
+            }
+            val normalizedDurationMs = if (durationMs > 0L) {
+                durationMs
+            } else {
+                Log.w(TAG, "Segment duration missing; defaulting to $DEFAULT_SEGMENT_DURATION_MS ms for ${file.name}")
+                DEFAULT_SEGMENT_DURATION_MS
             }
 
             val startMs = if (sessionStart != null) {
@@ -384,12 +713,195 @@ class MediaPipelineUseCase @Inject constructor(
                 0L
             }
 
-            segments.add(VideoSegment(file = file, startMs = startMs, durationMs = durationMs))
+            segments.add(
+                VideoSegment(
+                    file = file,
+                    startMs = startMs,
+                    durationMs = normalizedDurationMs,
+                    absoluteStartMs = log.timestamp
+                )
+            )
         }
         return segments.sortedBy { it.startMs }
+    }
+
+    private suspend fun selectSegmentsByImportance(
+        sessionId: String,
+        segments: List<VideoSegment>
+    ): List<VideoSegment> {
+        if (segments.isEmpty()) return segments
+
+        val totalDuration = segments.sumOf { it.durationMs.coerceAtLeast(0L) }
+        if (totalDuration <= MAX_REPLAY_DURATION_MS) {
+            return segments.sortedBy { it.startMs }
+        }
+
+        val logs = localRepository.getSessionLogs(sessionId)
+        val screamEvents = logs.filter { it.type == MediaType.SCREAM_EVENT && it.decibel != null }
+        val guide = localRepository.getPerspectiveGuide(sessionId)
+
+        val ranked = segments.map { segment ->
+            val score = computeSegmentScore(segment, screamEvents, guide)
+            RankedSegment(segment = segment, score = score)
+        }
+
+        val sorted = ranked.sortedWith(
+            compareByDescending<RankedSegment> { it.score }
+                .thenBy { it.segment.startMs }
+        )
+
+        var total = 0L
+        val selected = mutableListOf<VideoSegment>()
+        for (entry in sorted) {
+            val duration = entry.segment.durationMs.coerceAtLeast(0L)
+            if (selected.isEmpty() || total + duration <= MAX_REPLAY_DURATION_MS) {
+                selected.add(entry.segment)
+                total += duration
+            }
+            if (total >= MAX_REPLAY_DURATION_MS) break
+        }
+
+        if (selected.isEmpty()) {
+            return segments.sortedBy { it.startMs }.take(1)
+        }
+
+        return selected.sortedBy { it.startMs }
+    }
+
+    private suspend fun computeSegmentScore(
+        segment: VideoSegment,
+        screamEvents: List<MediaLogEntity>,
+        guide: PerspectiveGuideConfig?
+    ): Float {
+        val midpoint = segment.absoluteStartMs + (segment.durationMs / 2)
+        val bestEventScore = screamEvents.mapNotNull { event ->
+            val decibel = event.decibel ?: return@mapNotNull null
+            val distanceMs = abs(event.timestamp - midpoint)
+            if (distanceMs > SEGMENT_EVENT_WINDOW_MS) return@mapNotNull null
+            val distancePenalty = (distanceMs / 1000f) * SEGMENT_EVENT_DISTANCE_PENALTY
+            (decibel.toFloat() - distancePenalty).coerceAtLeast(0f)
+        }.maxOrNull()
+
+        if (bestEventScore != null) {
+            return bestEventScore
+        }
+
+        val motionScore = computeMotionScore(segment.file, guide)
+        return motionScore * MOTION_SCORE_WEIGHT
+    }
+
+    private suspend fun computeMotionScore(
+        file: File,
+        guide: PerspectiveGuideConfig?
+    ): Float = withContext(Dispatchers.IO) {
+        if (!file.exists()) return@withContext 0f
+        val retriever = MediaMetadataRetriever()
+        var firstFrame: Bitmap? = null
+        var secondFrame: Bitmap? = null
+        var firstScaled: Bitmap? = null
+        var secondScaled: Bitmap? = null
+        try {
+            retriever.setDataSource(file.absolutePath)
+            val durationMs =
+                retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull()
+                    ?: return@withContext 0f
+            if (durationMs <= 0L) return@withContext 0f
+
+            val durationUs = durationMs * 1000L
+            val firstUs = minOf(500_000L, durationUs / 3)
+            val secondUs = minOf(2_000_000L, (durationUs * 2) / 3)
+
+            firstFrame = retriever.getFrameAtTime(firstUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+            secondFrame = retriever.getFrameAtTime(secondUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+            if (firstFrame == null || secondFrame == null) return@withContext 0f
+
+            val targetWidth = 160
+            val localFirstScaled = scaleForSampling(firstFrame, targetWidth)
+            val localSecondScaled = scaleForSampling(secondFrame, targetWidth)
+            firstScaled = localFirstScaled
+            secondScaled = localSecondScaled
+            val bounds = computeRoiBounds(guide, localFirstScaled.width, localFirstScaled.height)
+            if (bounds.width <= 0 || bounds.height <= 0) return@withContext 0f
+
+            val step = maxOf(1, minOf(bounds.width, bounds.height) / 32)
+            var diffSum = 0f
+            var count = 0
+            for (y in bounds.top until bounds.bottom step step) {
+                for (x in bounds.left until bounds.right step step) {
+                    val c1 = localFirstScaled.getPixel(x, y)
+                    val c2 = localSecondScaled.getPixel(x, y)
+                    diffSum += abs(luminance(c1) - luminance(c2))
+                    count++
+                }
+            }
+
+            if (count == 0) 0f else diffSum / count
+        } catch (e: Exception) {
+            Log.e(TAG, "Motion scoring failed for ${file.name}", e)
+            0f
+        } finally {
+            if (firstScaled != null && firstScaled !== firstFrame) {
+                firstScaled?.recycle()
+            }
+            if (secondScaled != null && secondScaled !== secondFrame) {
+                secondScaled?.recycle()
+            }
+            try { retriever.release() } catch (e: Exception) {}
+            firstFrame?.recycle()
+            secondFrame?.recycle()
+        }
+    }
+
+    private data class RoiBounds(val left: Int, val top: Int, val right: Int, val bottom: Int) {
+        val width: Int get() = right - left
+        val height: Int get() = bottom - top
+    }
+
+    private fun scaleForSampling(bitmap: Bitmap, targetWidth: Int): Bitmap {
+        if (bitmap.width <= targetWidth) {
+            return bitmap
+        }
+        val scaledHeight = (bitmap.height * (targetWidth / bitmap.width.toFloat()))
+            .toInt()
+            .coerceAtLeast(1)
+        return Bitmap.createScaledBitmap(bitmap, targetWidth, scaledHeight, true)
+    }
+
+    private fun computeRoiBounds(
+        guide: PerspectiveGuideConfig?,
+        width: Int,
+        height: Int
+    ): RoiBounds {
+        if (guide == null) {
+            return RoiBounds(0, 0, width, height)
+        }
+
+        val minX = guide.points.minOf { it.x }.coerceIn(0f, 1f)
+        val maxX = guide.points.maxOf { it.x }.coerceIn(0f, 1f)
+        val minY = guide.points.minOf { it.y }.coerceIn(0f, 1f)
+        val maxY = guide.points.maxOf { it.y }.coerceIn(0f, 1f)
+
+        val left = (minX * width).toInt().coerceIn(0, width - 1)
+        val right = (maxX * width).toInt().coerceIn(left + 1, width)
+        val top = (minY * height).toInt().coerceIn(0, height - 1)
+        val bottom = (maxY * height).toInt().coerceIn(top + 1, height)
+
+        return RoiBounds(left = left, top = top, right = right, bottom = bottom)
+    }
+
+    private fun luminance(color: Int): Float {
+        val r = Color.red(color).toFloat()
+        val g = Color.green(color).toFloat()
+        val b = Color.blue(color).toFloat()
+        return 0.299f * r + 0.587f * g + 0.114f * b
     }
     
     companion object {
         private const val TAG = "MediaPipeline"
+        private const val MAX_REPLAY_DURATION_MS = 4 * 60_000L
+        private const val SEGMENT_EVENT_WINDOW_MS = 90_000L
+        private const val SEGMENT_EVENT_DISTANCE_PENALTY = 0.5f
+        private const val MOTION_SCORE_WEIGHT = 2.0f
+        private const val DEFAULT_SEGMENT_DURATION_MS = 30_000L
     }
 }

@@ -17,6 +17,7 @@ import com.hackathon.afterlog.MainActivity
 import com.hackathon.afterlog.R
 import com.hackathon.afterlog.data.model.PerspectiveGuideConfig
 import com.hackathon.afterlog.data.repository.LocalRepository
+import com.hackathon.afterlog.feature.preview.MiniPreviewActivity
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -131,10 +132,8 @@ class AfterLogService : LifecycleService() {
 
     private fun handleResumeSession(sessionId: String, guide: PerspectiveGuideConfig?) {
         currentSessionId = sessionId
-        guide?.let {
-            currentGuide = it
-            videoManager.setPerspectiveGuide(it)
-        }
+        currentGuide = guide
+        guide?.let { videoManager.setPerspectiveGuide(it) }
         startRecording(sessionId)
     }
 
@@ -283,6 +282,7 @@ class AfterLogService : LifecycleService() {
         )
 
         val stopIntent = buildStopPendingIntent()
+        val previewIntent = buildPreviewPendingIntent()
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("AfterLog Recording")
@@ -290,6 +290,7 @@ class AfterLogService : LifecycleService() {
             .setSmallIcon(R.drawable.ic_notification_record)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
+            .addAction(R.drawable.ic_notification_record, "Preview", previewIntent)
             .addAction(R.drawable.ic_notification_record, "Stop Recording", stopIntent)
             .build()
     }
@@ -303,6 +304,20 @@ class AfterLogService : LifecycleService() {
             0,
             stopIntent,
             PendingIntent.FLAG_IMMUTABLE
+        )
+    }
+
+    private fun buildPreviewPendingIntent(): PendingIntent {
+        val previewIntent = Intent(this, MiniPreviewActivity::class.java).apply {
+            putExtra(EXTRA_SESSION_ID, currentSessionId)
+            putExtra(EXTRA_PERSPECTIVE_GUIDE, currentGuide?.toSerializedString())
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        }
+        return PendingIntent.getActivity(
+            this,
+            1,
+            previewIntent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
     }
 

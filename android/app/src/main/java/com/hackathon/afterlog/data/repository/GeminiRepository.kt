@@ -69,10 +69,10 @@ class GeminiRepository @Inject constructor(
         audioFile: File?,
         contextData: String
     ): String = withContext(Dispatchers.IO) {
+        val frames = extractKeyFrames(videoFiles, intervalSec = 15)
         try {
             Log.d("GeminiRepo", "Starting Noir Analysis for ${videoFiles.size} files")
             
-            val frames = extractKeyFrames(videoFiles, intervalSec = 15)
             Log.d("GeminiRepo", "Extracted ${frames.size} frames")
             
             val audioData = audioFile?.let { uploadAudioToGemini(it) }
@@ -137,10 +137,8 @@ class GeminiRepository @Inject constructor(
             }
 
             val response = generateWithRetry(inputContent)
-            
-            frames.forEach { it.recycle() }
-
-            return@withContext response.text ?: """{"headline":"ANALYSIS FAILED","summary":"Output was empty","atmosphere":"","timeline":[],"verdict":"The typewriter jammed."}"""
+            return@withContext response.text
+                ?: """{"headline":"ANALYSIS FAILED","summary":"Output was empty","atmosphere":"","timeline":[],"verdict":"The typewriter jammed."}"""
 
         } catch (e: Exception) {
             Log.e("GeminiRepo", "Investigation failed", e)
@@ -151,6 +149,8 @@ class GeminiRepository @Inject constructor(
             val errorType = e.javaClass.simpleName
             val errorMessage = e.message?.replace("\"", "'") ?: "Unknown error"
             return@withContext """{"headline":"SYSTEM ERROR ($errorType)","summary":"$errorMessage","atmosphere":"","timeline":[],"verdict":"Investigation aborted."}"""
+        } finally {
+            frames.forEach { it.recycle() }
         }
     }
 
@@ -159,7 +159,7 @@ class GeminiRepository @Inject constructor(
      * Output format:
      * {
      *   "events": [
-     *     {"start_ms": 12000, "end_ms": 14000, "text": "운명의 굴림"}
+     *     {"start_ms": 12000, "end_ms": 14000, "text": "The dice are cast"}
      *   ]
      * }
      */
@@ -168,19 +168,34 @@ class GeminiRepository @Inject constructor(
         eventHints: List<String> = emptyList()
     ): List<CaptionLine> = withContext(Dispatchers.IO) {
         try {
-            val audioData = uploadAudioToGemini(audioFile) ?: return@withContext emptyList()
+            val audioData = uploadAudioToGemini(audioFile)
+            if (audioData == null) {
+                Log.w("GeminiRepo", "Audio upload failed, skipping caption generation.")
+                return@withContext emptyList()
+            }
 
             val prompt = """
                 You are a 1920s noir journalist writing ultra-short captions for a newsreel.
                 Keep the mood: fate, evidence, betrayal, silence breaking.
-                
+
                 RULES:
-                - Output JSON only: {"events":[{"start_ms":12000,"end_ms":14000,"text":"어둠이 갈라졌다"}]}
-                - 5~10 events max.
-                - text: 2~5 words (~12 chars), no slang, no modern internet words.
-                - Use strong noir phrases: 운명, 침묵, 단서, 그림자, 배신, 결판.
-                - Align to audio moments (scream, loud spike, tense dialogue).
-                
+                - Output JSON only: {"events":[{"start_ms":12000,"end_ms":14000,"text":"The dice are cast"}]}
+                - 5-10 events max.
+                - text: 2-5 words, about 12 chars max, short headline style.
+                - Avoid modern slang or internet words.
+                - Favor noir vocabulary: fate, omen, evidence, betrayal, silence, rupture, verdict.
+                - Match audio moments (scream, loud spike, tense dialogue).
+                - Prefer headline-style phrases, not exclamations.
+
+                TONE EXAMPLES:
+                - "The dice are cast"
+                - "Fate rolls"
+                - "Silence breaks"
+                - "A clue emerges"
+                - "A knife at the back"
+                - "Judgment falls"
+                - "The curtain drops"
+
                 HINTS:
                 ${eventHints.joinToString(separator = "; ")}
             """.trimIndent()
@@ -204,6 +219,11 @@ class GeminiRepository @Inject constructor(
             var cleaned = raw.trim()
             if (cleaned.startsWith("```")) {
                 cleaned = cleaned.removePrefix("```json").removePrefix("```").removeSuffix("```").trim()
+            }
+            val startIdx = cleaned.indexOf('{')
+            val endIdx = cleaned.lastIndexOf('}')
+            if (startIdx >= 0 && endIdx > startIdx) {
+                cleaned = cleaned.substring(startIdx, endIdx + 1)
             }
             val root = json.parseToJsonElement(cleaned).jsonObject
             val events = root["events"]?.jsonArray ?: return emptyList()
@@ -372,6 +392,11 @@ class GeminiRepository @Inject constructor(
         return try {
             val wavFile = File(pcmFile.parent, pcmFile.nameWithoutExtension + ".wav")
             val dataLen = pcmFile.length()
+            val maxDataLen = 0xFFFFFFFFL - 36
+            if (dataLen <= 0L || dataLen > maxDataLen) {
+                Log.e("GeminiRepo", "PCM file too large for WAV header: $dataLen")
+                return null
+            }
             
             val sampleRate = 16000 // AppConstants.Audio.SAMPLE_RATE
             val channels = 1

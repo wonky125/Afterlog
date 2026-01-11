@@ -1,12 +1,25 @@
 package com.hackathon.afterlog.data.media
 
 import android.content.Context
+import android.graphics.Color
+import android.graphics.Typeface
+import android.media.MediaMetadataRetriever
+import android.text.SpannableString
+import android.text.Spanned
+import android.text.style.BackgroundColorSpan
+import android.text.style.ForegroundColorSpan
+import android.text.style.RelativeSizeSpan
+import android.text.style.StyleSpan
 import android.util.Log
 import androidx.media3.common.MediaItem
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.effect.OverlayEffect
+import androidx.media3.effect.OverlaySettings
+import androidx.media3.effect.TextOverlay
 import androidx.media3.transformer.Composition
 import androidx.media3.transformer.EditedMediaItem
 import androidx.media3.transformer.EditedMediaItemSequence
+import androidx.media3.transformer.Effects
 import androidx.media3.transformer.ExportException
 import androidx.media3.transformer.ExportResult
 import androidx.media3.transformer.Transformer
@@ -19,6 +32,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import com.google.common.collect.ImmutableList
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.coroutines.resume
@@ -38,6 +52,7 @@ class VideoStitcher @Inject constructor(
     @ApplicationContext private val context: Context
 ) {
     data class AudioClip(val startMs: Long, val durationMs: Long)
+    data class CaptionCue(val startMs: Long, val endMs: Long, val text: String)
 
     companion object {
         private const val TAG = "VideoStitcher"
@@ -115,6 +130,95 @@ class VideoStitcher @Inject constructor(
             outputFile.delete()
             Result.failure(e)
         }
+    }
+
+    /**
+     * Burns subtitle cues into the video stream and returns a new MP4.
+     */
+    suspend fun burnInSubtitles(
+        inputVideo: File,
+        cues: List<CaptionCue>,
+        outputSessionId: String
+    ): Result<File> = withContext(Dispatchers.IO) {
+        if (!inputVideo.exists()) {
+            return@withContext Result.failure(
+                IllegalArgumentException("Input video missing: ${inputVideo.absolutePath}")
+            )
+        }
+
+        val normalizedCues = cues.mapNotNull { cue ->
+            val text = cue.text.replace("\n", " ").trim()
+            if (text.isBlank()) {
+                null
+            } else {
+                val startMs = cue.startMs.coerceAtLeast(0L)
+                val endMs = maxOf(cue.endMs, startMs + 1500L)
+                CaptionCue(startMs = startMs, endMs = endMs, text = text)
+            }
+        }
+
+        if (normalizedCues.isEmpty()) {
+            Log.d(TAG, "No subtitle cues provided; skipping burn-in.")
+            return@withContext Result.success(inputVideo)
+        }
+
+        val outputFile = File(context.filesDir, "replay_${outputSessionId}_burned.mp4")
+        if (outputFile.exists()) outputFile.delete()
+
+        try {
+            val overlay = CaptionTextOverlay(normalizedCues)
+            val overlayEffect = OverlayEffect(ImmutableList.of(overlay))
+            val effects = Effects(emptyList(), listOf(overlayEffect))
+
+            val editedItem = EditedMediaItem.Builder(MediaItem.fromUri(inputVideo.toURI().toString()))
+                .setEffects(effects)
+                .build()
+            val composition = Composition.Builder(EditedMediaItemSequence(editedItem)).build()
+
+            val result = executeTransformation(composition, outputFile)
+
+            if (result.isSuccess && outputFile.exists()) {
+                Log.d(TAG, "Subtitle burn-in complete: ${outputFile.absolutePath}")
+                Result.success(outputFile)
+            } else {
+                Result.failure(result.exceptionOrNull() ?: Exception("Subtitle burn-in failed."))
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Subtitle burn-in failed", e)
+            outputFile.delete()
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Burns subtitles into the video stream using an SRT file as the source of truth.
+     */
+    suspend fun burnInSubtitlesFromSrt(
+        inputVideo: File,
+        subtitleFile: File,
+        outputSessionId: String
+    ): Result<File> = withContext(Dispatchers.IO) {
+        if (!subtitleFile.exists()) {
+            return@withContext Result.failure(
+                IllegalArgumentException("Subtitle file missing: ${subtitleFile.absolutePath}")
+            )
+        }
+
+        val srtContent = runCatching { subtitleFile.readText() }.getOrNull().orEmpty()
+        if (srtContent.isBlank()) {
+            return@withContext Result.failure(
+                IllegalStateException("Subtitle file is empty: ${subtitleFile.absolutePath}")
+            )
+        }
+
+        val cues = parseSrtToCues(srtContent)
+        if (cues.isEmpty()) {
+            return@withContext Result.failure(
+                IllegalStateException("No cues parsed from SRT: ${subtitleFile.absolutePath}")
+            )
+        }
+
+        burnInSubtitles(inputVideo, cues, outputSessionId)
     }
 
     /**
@@ -225,6 +329,58 @@ class VideoStitcher @Inject constructor(
             Result.failure(e)
         }
     }
+
+    /**
+     * Trims a video to a max duration using Transformer clipping.
+     */
+    suspend fun trimVideoToMaxDuration(
+        inputVideo: File,
+        maxDurationMs: Long,
+        outputSessionId: String
+    ): Result<File> = withContext(Dispatchers.IO) {
+        if (!inputVideo.exists()) {
+            return@withContext Result.failure(
+                IllegalArgumentException("Input video missing: ${inputVideo.absolutePath}")
+            )
+        }
+        if (maxDurationMs <= 0) {
+            return@withContext Result.success(inputVideo)
+        }
+
+        val durationMs = extractDurationMs(inputVideo)
+        if (durationMs == null || durationMs <= maxDurationMs) {
+            return@withContext Result.success(inputVideo)
+        }
+
+        val suffix = if (inputVideo.nameWithoutExtension.contains("_burned")) {
+            "_burned_trimmed"
+        } else {
+            "_trimmed"
+        }
+        val outputFile = File(context.filesDir, "replay_${outputSessionId}$suffix.mp4")
+        if (outputFile.exists()) outputFile.delete()
+
+        val clipping = ClippingConfiguration.Builder()
+            .setStartPositionMs(0)
+            .setEndPositionMs(maxDurationMs)
+            .build()
+
+        val mediaItem = MediaItem.Builder()
+            .setUri(inputVideo.toURI().toString())
+            .setClippingConfiguration(clipping)
+            .build()
+
+        val editedItem = EditedMediaItem.Builder(mediaItem).build()
+        val composition = Composition.Builder(EditedMediaItemSequence(editedItem)).build()
+
+        val result = executeTransformation(composition, outputFile)
+        if (result.isSuccess && outputFile.exists()) {
+            Log.d(TAG, "Trimmed video to ${maxDurationMs}ms: ${outputFile.absolutePath}")
+            Result.success(outputFile)
+        } else {
+            Result.failure(result.exceptionOrNull() ?: Exception("Video trim failed."))
+        }
+    }
     
     /**
      * Builds a video sequence from multiple files for concatenation.
@@ -307,6 +463,23 @@ class VideoStitcher @Inject constructor(
 
         return EditedMediaItemSequence(editedItems)
     }
+
+    private fun extractDurationMs(file: File): Long? {
+        val retriever = MediaMetadataRetriever()
+        return try {
+            retriever.setDataSource(file.absolutePath)
+            retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull()
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to read duration: ${file.name}", e)
+            null
+        } finally {
+            try {
+                retriever.release()
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to release retriever", e)
+            }
+        }
+    }
     
     /**
      * Executes the Transformer export operation asynchronously.
@@ -370,10 +543,10 @@ class VideoStitcher @Inject constructor(
             val channels = 1
             val byteRate = sampleRate * channels * 2
             val dataLen = pcmFile.length()
-            // Check for potential overflow, though unlikely for mobile recordings (2GB limit for Wav)
-            if (dataLen > Int.MAX_VALUE - 36) {
-                 Log.e(TAG, "PCM file too large for standard WAV header: $dataLen")
-                 return null
+            val maxDataLen = 0xFFFFFFFFL - 36
+            if (dataLen <= 0L || dataLen > maxDataLen) {
+                Log.e(TAG, "PCM file too large for WAV header: $dataLen")
+                return null
             }
             val totalDataLen = dataLen + 36
 
@@ -459,6 +632,7 @@ class VideoStitcher @Inject constructor(
      * Creates a video from images (slideshow) when no video chunks are available.
      * Falls back to the existing VideoSynthesizer for this case.
      */
+    @Suppress("UNUSED_PARAMETER")
     suspend fun createImageSlideshow(
         images: List<File>,
         narrationAudio: File,
@@ -468,5 +642,172 @@ class VideoStitcher @Inject constructor(
         // Delegate to VideoSynthesizer for image-based video creation
         // This keeps the existing working logic for the fallback case
         Result.failure(UnsupportedOperationException("Use VideoSynthesizer for image slideshows"))
+    }
+
+    private class CaptionTextOverlay(
+        cues: List<CaptionCue>
+    ) : TextOverlay() {
+        private data class PreparedCue(val startMs: Long, val endMs: Long, val text: SpannableString)
+
+        private val emptyText = buildInvisibleSpan()
+        private val preparedCues = cues.mapNotNull { cue ->
+            val text = cue.text.trim()
+            if (text.isBlank()) {
+                null
+            } else {
+                PreparedCue(
+                    startMs = cue.startMs,
+                    endMs = cue.endMs,
+                    text = buildSpan(text)
+                )
+            }
+        }.sortedBy { it.startMs }
+        @Volatile private var lastIndex = -1
+
+        private val overlaySettings = OverlaySettings.Builder()
+            .setBackgroundFrameAnchor(0f, -0.6f)
+            .setOverlayFrameAnchor(0f, -1f)
+            .build()
+
+        override fun getText(presentationTimeUs: Long): SpannableString {
+            val timeMs = presentationTimeUs / 1000
+            val cue = findCue(timeMs) ?: return emptyText
+            return cue.text
+        }
+
+        override fun getOverlaySettings(presentationTimeUs: Long): OverlaySettings {
+            return overlaySettings
+        }
+
+        private fun findCue(timeMs: Long): PreparedCue? {
+            val idx = lastIndex
+            if (idx in preparedCues.indices) {
+                val current = preparedCues[idx]
+                if (timeMs in current.startMs..current.endMs) {
+                    return current
+                }
+            }
+
+            for (i in preparedCues.indices) {
+                val cue = preparedCues[i]
+                if (timeMs in cue.startMs..cue.endMs) {
+                    lastIndex = i
+                    return cue
+                }
+            }
+            return null
+        }
+
+        private fun buildSpan(text: String): SpannableString {
+            val spanText = SpannableString(text)
+            if (text.isNotEmpty()) {
+                spanText.setSpan(
+                    ForegroundColorSpan(Color.WHITE),
+                    0,
+                    text.length,
+                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+                )
+                spanText.setSpan(
+                    BackgroundColorSpan(Color.argb(160, 0, 0, 0)),
+                    0,
+                    text.length,
+                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+                )
+                spanText.setSpan(
+                    StyleSpan(Typeface.BOLD),
+                    0,
+                    text.length,
+                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+                )
+                spanText.setSpan(
+                    RelativeSizeSpan(0.85f),
+                    0,
+                    text.length,
+                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+                )
+            }
+            return spanText
+        }
+
+        private fun buildInvisibleSpan(): SpannableString {
+            val spanText = SpannableString(".")
+            spanText.setSpan(
+                ForegroundColorSpan(Color.TRANSPARENT),
+                0,
+                spanText.length,
+                Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+            )
+            spanText.setSpan(
+                BackgroundColorSpan(Color.TRANSPARENT),
+                0,
+                spanText.length,
+                Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+            )
+            return spanText
+        }
+    }
+
+    private fun parseSrtToCues(srtContent: String): List<CaptionCue> {
+        val normalized = srtContent.replace("\r", "").trimStart('\uFEFF')
+        if (normalized.isBlank()) return emptyList()
+
+        val cues = mutableListOf<CaptionCue>()
+        val blocks = normalized.split(Regex("\\n\\s*\\n"))
+        for (block in blocks) {
+            val lines = block.lines()
+                .map { it.trim() }
+                .filter { it.isNotBlank() }
+            if (lines.isEmpty()) continue
+
+            val timeLineIndex = lines.indexOfFirst { it.contains("-->") }
+            if (timeLineIndex == -1) continue
+
+            val timeLine = lines[timeLineIndex]
+            val parts = timeLine.split("-->")
+            if (parts.size < 2) continue
+
+            val startMs = parseSrtTimestamp(parts[0].trim())
+            val endPart = parts[1].trim().split(Regex("\\s+")).firstOrNull().orEmpty()
+            val endMs = parseSrtTimestamp(endPart)
+
+            val textLines = lines.drop(timeLineIndex + 1)
+            val text = cleanSrtText(textLines.joinToString(" "))
+            if (startMs != null && endMs != null && text.isNotBlank()) {
+                cues.add(
+                    CaptionCue(
+                        startMs = startMs.coerceAtLeast(0L),
+                        endMs = maxOf(endMs, startMs + 500L),
+                        text = text
+                    )
+                )
+            }
+        }
+        return cues
+    }
+
+    private fun cleanSrtText(text: String): String {
+        return text
+            .replace(Regex("<[^>]+>"), "")
+            .replace(Regex("\\{\\\\.*?\\}"), "")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+    }
+
+    private fun parseSrtTimestamp(value: String): Long? {
+        val match = Regex("(\\d{2}):(\\d{2}):(\\d{2})([.,](\\d{1,3}))?").find(value) ?: return null
+        val hours = match.groupValues[1]
+        val minutes = match.groupValues[2]
+        val seconds = match.groupValues[3]
+        val millisPart = match.groupValues[5]
+        val millis = when (millisPart.length) {
+            0 -> 0
+            1 -> millisPart.toInt() * 100
+            2 -> millisPart.toInt() * 10
+            else -> millisPart.take(3).toInt()
+        }
+        return hours.toLong() * 3_600_000L +
+            minutes.toLong() * 60_000L +
+            seconds.toLong() * 1_000L +
+            millis.toLong()
     }
 }

@@ -74,6 +74,10 @@ class LocalRepository @Inject constructor(
         logDao.insertLog(log)
     }
 
+    suspend fun deleteLogsBySessionAndType(sessionId: String, type: MediaType) {
+        logDao.deleteLogsBySessionAndType(sessionId, type)
+    }
+
     fun getLogsForSession(sessionId: String): Flow<List<MediaLogEntity>> {
         return logDao.getLogsBySession(sessionId)
     }

@@ -16,8 +16,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.pointer.consume
-import androidx.compose.ui.input.pointer.detectDragGestures
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -38,31 +37,62 @@ fun PerspectiveGuideEditor(
     config: PerspectiveGuideConfig,
     handleSize: Dp = 20.dp,
     isEditable: Boolean = true,
+    showBackground: Boolean = true,
+    showGrid: Boolean = true,
+    showFrame: Boolean = true,
+    lockAspectRatio: Boolean = true,
     onGuideChanged: (PerspectiveGuideConfig) -> Unit
 ) {
+    val baseModifier = if (lockAspectRatio) {
+        modifier.aspectRatio(1f)
+    } else {
+        modifier
+    }
+    val currentConfig by rememberUpdatedState(config)
     BoxWithConstraints(
-        modifier = modifier
-            .aspectRatio(1f)
-            .border(1.dp, Color.White.copy(alpha = 0.3f))
+        modifier = baseModifier.then(
+            if (showFrame) {
+                Modifier.border(1.dp, Color.White.copy(alpha = 0.3f))
+            } else {
+                Modifier
+            }
+        )
     ) {
         val areaWidth = constraints.maxWidth.toFloat().coerceAtLeast(1f)
         val areaHeight = constraints.maxHeight.toFloat().coerceAtLeast(1f)
         val density = LocalDensity.current
         val handleSizePx = with(density) { handleSize.toPx() }
         val handleRadius = handleSizePx / 2f
+        val minX = (handleRadius / areaWidth).coerceIn(0f, 0.5f)
+        val maxX = 1f - minX
+        val minY = (handleRadius / areaHeight).coerceIn(0f, 0.5f)
+        val maxY = 1f - minY
 
-        Canvas(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.9f))) {
-            // Draw background grid
-            val gridPaint = Color.Gray.copy(alpha = 0.3f)
-            repeat(4) { index ->
-                val posY = areaHeight * ((index + 1) / 5f)
-                drawLine(gridPaint, Offset(0f, posY), Offset(areaWidth, posY), strokeWidth = 1f)
-                val posX = areaWidth * ((index + 1) / 5f)
-                drawLine(gridPaint, Offset(posX, 0f), Offset(posX, areaHeight), strokeWidth = 1f)
+        fun clampPoint(point: PerspectiveGuidePoint): PerspectiveGuidePoint {
+            return PerspectiveGuidePoint(
+                point.x.coerceIn(minX, maxX),
+                point.y.coerceIn(minY, maxY)
+            )
+        }
+        val clampedPoints = config.points.map(::clampPoint)
+
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            if (showBackground) {
+                drawRect(Color.Black.copy(alpha = 0.9f))
+            }
+            if (showGrid) {
+                val gridPaint = Color.Gray.copy(alpha = 0.3f)
+                repeat(4) { index ->
+                    val posY = areaHeight * ((index + 1) / 5f)
+                    drawLine(gridPaint, Offset(0f, posY), Offset(areaWidth, posY), strokeWidth = 1f)
+                    val posX = areaWidth * ((index + 1) / 5f)
+                    drawLine(gridPaint, Offset(posX, 0f), Offset(posX, areaHeight), strokeWidth = 1f)
+                }
             }
 
             val lineColor = Color(0xFFCE3F80)
-            val points = config.points.map {
+            val fillAlpha = if (showBackground) 0.55f else 0.18f
+            val points = clampedPoints.map {
                 Offset(it.x * areaWidth, it.y * areaHeight)
             }
             val path = androidx.compose.ui.graphics.Path().apply {
@@ -70,11 +100,11 @@ fun PerspectiveGuideEditor(
                 points.drop(1).forEach { lineTo(it.x, it.y) }
                 close()
             }
-            drawPath(path, lineColor.copy(alpha = 0.55f))
+            drawPath(path, lineColor.copy(alpha = fillAlpha))
             drawPath(path, Color.White.copy(alpha = 0.85f), style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2f))
         }
 
-        config.points.forEachIndexed { index, point ->
+        clampedPoints.forEachIndexed { index, point ->
             val offsetX = (point.x * areaWidth).roundToInt()
             val offsetY = (point.y * areaHeight).roundToInt()
 
@@ -92,13 +122,14 @@ fun PerspectiveGuideEditor(
                         if (isEditable) {
                             Modifier.pointerInput(index) {
                                 detectDragGestures { change, dragAmount ->
+                                    val currentPoint = clampPoint(currentConfig.points[index])
                                     val deltaX = dragAmount.x / areaWidth
                                     val deltaY = dragAmount.y / areaHeight
                                     val updatedPoint = PerspectiveGuidePoint(
-                                        (point.x + deltaX).coerceIn(0f, 1f),
-                                        (point.y + deltaY).coerceIn(0f, 1f)
+                                        (currentPoint.x + deltaX).coerceIn(minX, maxX),
+                                        (currentPoint.y + deltaY).coerceIn(minY, maxY)
                                     )
-                                    onGuideChanged(config.withUpdatedPoint(index, updatedPoint))
+                                    onGuideChanged(currentConfig.withUpdatedPoint(index, updatedPoint))
                                     change.consume()
                                 }
                             }
@@ -186,7 +217,7 @@ fun AutoLevelIndicator(modifier: Modifier = Modifier) {
         )
         Spacer(modifier = Modifier.height(4.dp))
         LinearProgressIndicator(
-            progress = normalized,
+            progress = { normalized },
             modifier = Modifier.fillMaxWidth(),
             color = Color(0xFF69F0AE),
             trackColor = Color.White.copy(alpha = 0.2f)
