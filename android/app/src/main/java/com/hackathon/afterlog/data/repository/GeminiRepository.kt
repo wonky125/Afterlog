@@ -1,11 +1,8 @@
 package com.hackathon.afterlog.data.repository
 
-import android.content.Context
 import android.graphics.Bitmap
 import android.util.Log
-import com.hackathon.afterlog.BuildConfig
 import com.hackathon.afterlog.data.model.HighlightSegment
-import com.hackathon.afterlog.data.remote.GeminiFilesApiClient
 import com.hackathon.afterlog.data.repository.gemini.GeminiAudioUtils
 import com.hackathon.afterlog.data.repository.gemini.GeminiLogUtils
 import com.hackathon.afterlog.data.repository.gemini.GeminiParsers
@@ -14,8 +11,6 @@ import com.hackathon.afterlog.data.repository.gemini.GeminiRetryPolicy
 import com.hackathon.afterlog.data.repository.gemini.GeminiVideoUtils
 import com.google.ai.client.generativeai.GenerativeModel
 import com.google.ai.client.generativeai.type.content
-import com.google.ai.client.generativeai.type.generationConfig
-import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -24,28 +19,16 @@ import javax.inject.Singleton
 
 @Singleton
 class GeminiRepository @Inject constructor(
-    private val filesApiClient: GeminiFilesApiClient,
-    @ApplicationContext private val context: Context
+    private val generativeModel: GenerativeModel,
+    private val retryPolicy: GeminiRetryPolicy,
+    private val audioUtils: GeminiAudioUtils,
+    private val promptBuilder: GeminiPromptBuilder,
+    private val parsers: GeminiParsers,
+    private val videoUtils: GeminiVideoUtils,
+    private val logUtils: GeminiLogUtils
 ) {
     data class CaptionLine(val startMs: Long, val endMs: Long, val text: String)
 
-    private val generativeModel = GenerativeModel(
-        modelName = "gemini-3-pro-preview",
-        apiKey = BuildConfig.GEMINI_API_KEY,
-        generationConfig = generationConfig {
-            temperature = 0.4f
-            topK = 40
-            topP = 0.95f
-            maxOutputTokens = 4096
-        }
-    )
-
-    private val retryPolicy = GeminiRetryPolicy(generativeModel)
-    private val audioUtils = GeminiAudioUtils(filesApiClient, context)
-    private val promptBuilder = GeminiPromptBuilder
-    private val parsers = GeminiParsers
-    private val videoUtils = GeminiVideoUtils
-    private val logUtils = GeminiLogUtils
 
     suspend fun testConnection(): String = withContext(Dispatchers.IO) {
         try {

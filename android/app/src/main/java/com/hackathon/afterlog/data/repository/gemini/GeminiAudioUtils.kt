@@ -33,6 +33,9 @@ class GeminiAudioUtils(
                     Log.d("GeminiRepo", "Uploading converted audio: ${wavFile.name} ($wavMimeType)")
                     val uri = filesApiClient.uploadFile(wavFile, wavMimeType)
                     return if (uri != null) {
+                        if (!wavFile.delete()) {
+                            Log.w("GeminiRepo", "Failed to delete temp WAV: ${wavFile.absolutePath}")
+                        }
                         Log.d("GeminiRepo", "Audio upload SUCCESS. URI: $uri")
                         Pair(uri, wavMimeType)
                     } else {
