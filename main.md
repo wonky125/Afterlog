@@ -1,8 +1,9 @@
 ﻿## 2026-01-07 개발 계획
 - **목표**: 비디오 합성/재생 완성 + 음성 TTS(READ REPORT), 리포트 생성 시 TTS 포함하여 최종 영상 완성.
 - **모델**: 현재 Gemini 3 Pro Preview(`gemini-3-pro-preview`)를 사용중, 텍스트+음성 동시 분석에 탁월.
-- **기능**: PLAY REEL은 이미지/TTS가 결합된 MP4를 재생. 동영상 하이라이트 있으면 스티칭/합성.
-- **로직**: Rolling Buffer 도입하여 **과거 1.5분** 저장 (비디오 무음 + 오디오 PCM 별도 기록).
+- **기능**: PLAY REEL은 이미지/TTS가 결합된 MP4를 재생. Gemini가 오디오/영상 맥락을 분석해 편집 타임스탬프를 생성하고, 해당 구간을 잘라 최종 리플레이를 구성.
+- **로직**: Rolling Buffer로 하이라이트 승격용 1.5분을 유지하면서, 모든 30초 비디오 청크를 세션 저장소에 영구 보관.
+- **세션 관리**: 새 녹화 시작 시 직전 세션의 파일/로그를 자동 정리(테스트 반복용).
 - **자막**: Gemini 기반 `SRT` 생성 + 하드 자막 번인 적용(Transformer).
 - **비용/성능**: maxOutputTokens=4096 설정, 프레임 제한 40개 유지. 영상 분석 intervalSec 현재 15초 (조정 여지).
 
@@ -162,14 +163,14 @@ Tip
 
 시간 동기화 (Time-Sync): NTP(TimeManager) 기반으로 모든 미디어 타임스탬프를 보정합니다.
 데이터 수집:
-타임랩스: 5초 간격 이미지 저장 (Viewer용/리플레이 fallback).
-비디오 청크: 30초 MP4 단위로 기록, 롤링 버퍼 6개(약 3분).
+타임랩스: 비활성화 (용량 절약).
+비디오 청크: 30초 MP4 단위로 기록 + 세션 저장소에 영구 보관. 롤링 버퍼 6개(약 3분)는 하이라이트 승격용.
 하이라이트 승격: 비명 감지 시 전 90초 + 후 90초 = 총 3분 저장. ROI 모션은 청크 finalize 시 임계값 기반 승격(쿨다운 60초).
 오디오 녹음: 게임 전체 PCM 수집, 필요 시 WAV 변환 후 업로드.
 AI 분석 입력: 15초 간격 키프레임(최대 40장, 512px 리사이즈) + 오디오 파일 URI.
 Note
 
-비명/모션 기반 수집의 역할: 안전망으로 원본을 확보해 두고, AI가 의미 있는 구간을 선택할 수 있게 합니다.
+비명/모션 기반 수집의 역할: 안전망으로 원본을 확보해 두고, Gemini가 의미 있는 구간을 선택할 수 있게 합니다.
 
 2단계: 편집 (Edit) - "진짜 중요한 건 이거야"
 트리거: 세션 분석 요청 시점
@@ -177,13 +178,14 @@ Note
 
 Context Injection (Gemini 3.0 Pro):
 Files API 업로드: PCM -> WAV 변환 후 Files API로 업로드하여 오디오 URI 확보.
-멀티모달 프롬프트: 키프레임 + 오디오 기반 리포트 JSON(헤드라인/요약/타임라인/판결) 생성.
+멀티모달 프롬프트: 키프레임 + 오디오 기반 리포트 JSON(헤드라인/요약/타임라인/판결) + **편집 타임스탬프(highlight_segments)** 생성.
 Gemini Native Diarization: 현재 미구현(화자 라벨은 프롬프트 기반 생성).
 멀티모달 출력 (Accessibility):
 생성된 텍스트 리플레이를 Google Cloud TTS로 낭독.
 영상 합성 (Video Synthesis - Hybrid):
-Priority 1 (Highlight Video): 하이라이트 영상 스티칭 + 오디오 오버레이.
-Priority 2 (Slideshow): 하이라이트가 없으면 키프레임/타임랩스 기반 슬라이드쇼 합성.
+Priority 1 (Gemini Edit): Gemini가 반환한 타임스탬프 구간을 최우선으로 트리밍/스티칭.
+Priority 2 (Highlight Video): 비명/모션 기반 하이라이트를 보정/보강으로 활용.
+Priority 3 (Slideshow): 하이라이트가 없으면 키프레임/타임랩스 기반 슬라이드쇼 합성.
 자막: Gemini 캡션 -> SRT 생성 -> Media3 Transformer로 하드 자막 번인.
 Tip
 
@@ -263,7 +265,7 @@ Technical Execution (40%): Gemini 3 API(멀티모달, 롱컨텍스트)의 기술
 화자 분리(Speaker Diarization)	Gemini 3.0 Pro Native 기능으로 별도 구현 없이 해결
 Gemini 서사 & 로그 생성	전체 오디오와 사진 샘플을 기반으로 맥락을 파악하여 정확도 높은 사건 일지 생성
 Newspaper View	상세 로그와 서사를 신문 기사 형식으로 보여주는 UI
-MP4 영상 합성 (Hybrid)	**실제 비디오 클립(Rolling Buffer)**과 타임랩스 사진을 우선순위에 따라 병합하여 하이라이트 영상 생성 (✅ Rolling Buffer 완료)
+MP4 영상 합성 (Hybrid)	**VIDEO_CHUNK + Gemini 편집 타임스탬프**를 우선으로 스티칭하고, 필요 시 롤링 버퍼 하이라이트/키프레임을 보강 (✅ Rolling Buffer 완료)
 TTS 낭독	생성된 텍스트를 Google Cloud TTS로 음성 변환
 기본 뷰어 UI	생성된 리플레이를 볼 수 있는 간단한 화면
 🌟 Nice-to-Have (시간 여유 시 추가)
