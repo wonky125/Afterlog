@@ -69,10 +69,10 @@ class GeminiRepository @Inject constructor(
         audioFile: File?,
         contextData: String
     ): String = withContext(Dispatchers.IO) {
+        val frames = extractKeyFrames(videoFiles, intervalSec = 15)
         try {
             Log.d("GeminiRepo", "Starting Noir Analysis for ${videoFiles.size} files")
             
-            val frames = extractKeyFrames(videoFiles, intervalSec = 15)
             Log.d("GeminiRepo", "Extracted ${frames.size} frames")
             
             val audioData = audioFile?.let { uploadAudioToGemini(it) }
@@ -137,10 +137,8 @@ class GeminiRepository @Inject constructor(
             }
 
             val response = generateWithRetry(inputContent)
-            
-            frames.forEach { it.recycle() }
-
-            return@withContext response.text ?: """{"headline":"ANALYSIS FAILED","summary":"Output was empty","atmosphere":"","timeline":[],"verdict":"The typewriter jammed."}"""
+            return@withContext response.text
+                ?: """{"headline":"ANALYSIS FAILED","summary":"Output was empty","atmosphere":"","timeline":[],"verdict":"The typewriter jammed."}"""
 
         } catch (e: Exception) {
             Log.e("GeminiRepo", "Investigation failed", e)
@@ -151,6 +149,8 @@ class GeminiRepository @Inject constructor(
             val errorType = e.javaClass.simpleName
             val errorMessage = e.message?.replace("\"", "'") ?: "Unknown error"
             return@withContext """{"headline":"SYSTEM ERROR ($errorType)","summary":"$errorMessage","atmosphere":"","timeline":[],"verdict":"Investigation aborted."}"""
+        } finally {
+            frames.forEach { it.recycle() }
         }
     }
 
@@ -390,6 +390,11 @@ class GeminiRepository @Inject constructor(
         return try {
             val wavFile = File(pcmFile.parent, pcmFile.nameWithoutExtension + ".wav")
             val dataLen = pcmFile.length()
+            val maxDataLen = 0xFFFFFFFFL - 36
+            if (dataLen <= 0L || dataLen > maxDataLen) {
+                Log.e("GeminiRepo", "PCM file too large for WAV header: $dataLen")
+                return null
+            }
             
             val sampleRate = 16000 // AppConstants.Audio.SAMPLE_RATE
             val channels = 1

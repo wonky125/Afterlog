@@ -786,6 +786,8 @@ class MediaPipelineUseCase @Inject constructor(
         val retriever = MediaMetadataRetriever()
         var firstFrame: Bitmap? = null
         var secondFrame: Bitmap? = null
+        var firstScaled: Bitmap? = null
+        var secondScaled: Bitmap? = null
         try {
             retriever.setDataSource(file.absolutePath)
             val durationMs =
@@ -802,9 +804,11 @@ class MediaPipelineUseCase @Inject constructor(
             if (firstFrame == null || secondFrame == null) return@withContext 0f
 
             val targetWidth = 160
-            val firstScaled = scaleForSampling(firstFrame, targetWidth)
-            val secondScaled = scaleForSampling(secondFrame, targetWidth)
-            val bounds = computeRoiBounds(guide, firstScaled.width, firstScaled.height)
+            val localFirstScaled = scaleForSampling(firstFrame, targetWidth)
+            val localSecondScaled = scaleForSampling(secondFrame, targetWidth)
+            firstScaled = localFirstScaled
+            secondScaled = localSecondScaled
+            val bounds = computeRoiBounds(guide, localFirstScaled.width, localFirstScaled.height)
             if (bounds.width <= 0 || bounds.height <= 0) return@withContext 0f
 
             val step = maxOf(1, minOf(bounds.width, bounds.height) / 32)
@@ -812,21 +816,24 @@ class MediaPipelineUseCase @Inject constructor(
             var count = 0
             for (y in bounds.top until bounds.bottom step step) {
                 for (x in bounds.left until bounds.right step step) {
-                    val c1 = firstScaled.getPixel(x, y)
-                    val c2 = secondScaled.getPixel(x, y)
+                    val c1 = localFirstScaled.getPixel(x, y)
+                    val c2 = localSecondScaled.getPixel(x, y)
                     diffSum += abs(luminance(c1) - luminance(c2))
                     count++
                 }
             }
-
-            if (firstScaled !== firstFrame) firstScaled.recycle()
-            if (secondScaled !== secondFrame) secondScaled.recycle()
 
             if (count == 0) 0f else diffSum / count
         } catch (e: Exception) {
             Log.e(TAG, "Motion scoring failed for ${file.name}", e)
             0f
         } finally {
+            if (firstScaled != null && firstScaled !== firstFrame) {
+                firstScaled?.recycle()
+            }
+            if (secondScaled != null && secondScaled !== secondFrame) {
+                secondScaled?.recycle()
+            }
             try { retriever.release() } catch (e: Exception) {}
             firstFrame?.recycle()
             secondFrame?.recycle()

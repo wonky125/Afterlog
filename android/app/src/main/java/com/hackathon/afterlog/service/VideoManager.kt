@@ -286,34 +286,44 @@ class VideoManager @Inject constructor(
         secondFrame: Bitmap,
         guide: PerspectiveGuideConfig
     ): Float {
-        val targetWidth = 160
-        val firstScaled = scaleForSampling(firstFrame, targetWidth)
-        val secondScaled = scaleForSampling(secondFrame, targetWidth)
+        var firstScaled: Bitmap? = null
+        var secondScaled: Bitmap? = null
+        return try {
+            val targetWidth = 160
+            val localFirstScaled = scaleForSampling(firstFrame, targetWidth)
+            val localSecondScaled = scaleForSampling(secondFrame, targetWidth)
+            firstScaled = localFirstScaled
+            secondScaled = localSecondScaled
 
-        val bounds = computeRoiBounds(guide, firstScaled.width, firstScaled.height)
-        if (bounds.width <= 0 || bounds.height <= 0) {
-            return 0f
-        }
+            val bounds = computeRoiBounds(guide, localFirstScaled.width, localFirstScaled.height)
+            if (bounds.width <= 0 || bounds.height <= 0) {
+                0f
+            } else {
+                val step = maxOf(1, minOf(bounds.width, bounds.height) / 32)
+                var diffSum = 0f
+                var count = 0
 
-        val step = maxOf(1, minOf(bounds.width, bounds.height) / 32)
-        var diffSum = 0f
-        var count = 0
+                for (y in bounds.top until bounds.bottom step step) {
+                    for (x in bounds.left until bounds.right step step) {
+                        val c1 = localFirstScaled.getPixel(x, y)
+                        val c2 = localSecondScaled.getPixel(x, y)
+                        val luma1 = luminance(c1)
+                        val luma2 = luminance(c2)
+                        diffSum += kotlin.math.abs(luma1 - luma2)
+                        count++
+                    }
+                }
 
-        for (y in bounds.top until bounds.bottom step step) {
-            for (x in bounds.left until bounds.right step step) {
-                val c1 = firstScaled.getPixel(x, y)
-                val c2 = secondScaled.getPixel(x, y)
-                val luma1 = luminance(c1)
-                val luma2 = luminance(c2)
-                diffSum += kotlin.math.abs(luma1 - luma2)
-                count++
+                if (count > 0) diffSum / count else 0f
+            }
+        } finally {
+            if (firstScaled != null && firstScaled !== firstFrame) {
+                firstScaled?.recycle()
+            }
+            if (secondScaled != null && secondScaled !== secondFrame) {
+                secondScaled?.recycle()
             }
         }
-
-        if (firstScaled !== firstFrame) firstScaled.recycle()
-        if (secondScaled !== secondFrame) secondScaled.recycle()
-
-        return if (count > 0) diffSum / count else 0f
     }
 
     private fun scaleForSampling(bitmap: Bitmap, targetWidth: Int): Bitmap {
