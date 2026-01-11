@@ -204,27 +204,25 @@ class VideoManager @Inject constructor(
         }
     }
 
-    private suspend fun persistVideoChunk(sessionId: String, file: File) {
-        currentScope?.launch(Dispatchers.IO) {
-            if (!file.exists()) return@launch
+    private suspend fun persistVideoChunk(sessionId: String, file: File) = withContext(Dispatchers.IO) {
+        if (!file.exists()) return@withContext
 
-            val parsedTimestamp = extractTimestampFromFileName(file.name)
-            val timestamp = parsedTimestamp ?: timeManager.getCurrentTime()
-            val permFile = fileManager.getVideoChunkFile(sessionId, timestamp)
+        val parsedTimestamp = extractTimestampFromFileName(file.name)
+        val timestamp = parsedTimestamp ?: timeManager.getCurrentTime()
+        val permFile = fileManager.getVideoChunkFile(sessionId, timestamp)
 
-            try {
-                file.copyTo(permFile, overwrite = true)
-                repository.logMedia(
-                    sessionId = sessionId,
-                    type = MediaType.VIDEO_CHUNK,
-                    filePath = permFile.absolutePath,
-                    decibel = null,
-                    timestamp = timestamp
-                )
-                Log.d("VideoManager", "Saved VIDEO_CHUNK: ${permFile.name}")
-            } catch (e: Exception) {
-                Log.e("VideoManager", "Failed to persist video chunk", e)
-            }
+        try {
+            file.copyTo(permFile, overwrite = true)
+            repository.logMedia(
+                sessionId = sessionId,
+                type = MediaType.VIDEO_CHUNK,
+                filePath = permFile.absolutePath,
+                decibel = null,
+                timestamp = timestamp
+            )
+            Log.d("VideoManager", "Saved VIDEO_CHUNK: ${permFile.name}")
+        } catch (e: Exception) {
+            Log.e("VideoManager", "Failed to persist video chunk", e)
         }
     }
 
@@ -367,37 +365,35 @@ class VideoManager @Inject constructor(
         return 0.299f * r + 0.587f * g + 0.114f * b
     }
 
-    private fun saveAsHighlight(sessionId: String, file: File) {
-        currentScope?.launch(Dispatchers.IO) {
-            if (!file.exists()) return@launch
+    private suspend fun saveAsHighlight(sessionId: String, file: File) = withContext(Dispatchers.IO) {
+        if (!file.exists()) return@withContext
+        
+        val parsedTimestamp = extractTimestampFromFileName(file.name)
+        val timestamp = parsedTimestamp ?: timeManager.getCurrentTime()
+        Log.d("VideoManager", "Highlight timestamp=$timestamp parsed=$parsedTimestamp file=${file.name}")
+        val permFile = fileManager.getHighlightVideoFile(sessionId, file.name)
+        val highlightKey = permFile.absolutePath
+        if (!highlightIndex.add(highlightKey)) {
+            Log.d("VideoManager", "Highlight already saved, skipping duplicate: ${permFile.name}")
+            return@withContext
+        }
+        
+        try {
+            file.copyTo(permFile, overwrite = true)
             
-            val parsedTimestamp = extractTimestampFromFileName(file.name)
-            val timestamp = parsedTimestamp ?: timeManager.getCurrentTime()
-            Log.d("VideoManager", "Highlight timestamp=$timestamp parsed=$parsedTimestamp file=${file.name}")
-            val permFile = fileManager.getHighlightVideoFile(sessionId, file.name)
-            val highlightKey = permFile.absolutePath
-            if (!highlightIndex.add(highlightKey)) {
-                Log.d("VideoManager", "Highlight already saved, skipping duplicate: ${permFile.name}")
-                return@launch
-            }
-            
-            try {
-                file.copyTo(permFile, overwrite = true)
-                
-                // Register to DB as VIDEO_HIGHLIGHT for stitching
-                repository.logMedia(
-                    sessionId = sessionId,
-                    type = MediaType.VIDEO_HIGHLIGHT, 
-                    filePath = permFile.absolutePath,
-                    decibel = null,
-                    timestamp = timestamp
-                )
-                val guideText = perspectiveGuide?.toSerializedString() ?: "unset"
-                Log.d("VideoManager", "Saved VIDEO_HIGHLIGHT: ${permFile.name} guide=$guideText")
-            } catch (e: Exception) {
-                Log.e("VideoManager", "Failed to copy highlight file", e)
-                highlightIndex.remove(highlightKey)
-            }
+            // Register to DB as VIDEO_HIGHLIGHT for stitching
+            repository.logMedia(
+                sessionId = sessionId,
+                type = MediaType.VIDEO_HIGHLIGHT, 
+                filePath = permFile.absolutePath,
+                decibel = null,
+                timestamp = timestamp
+            )
+            val guideText = perspectiveGuide?.toSerializedString() ?: "unset"
+            Log.d("VideoManager", "Saved VIDEO_HIGHLIGHT: ${permFile.name} guide=$guideText")
+        } catch (e: Exception) {
+            Log.e("VideoManager", "Failed to copy highlight file", e)
+            highlightIndex.remove(highlightKey)
         }
     }
 
