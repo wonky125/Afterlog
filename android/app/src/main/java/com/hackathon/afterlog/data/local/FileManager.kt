@@ -34,6 +34,10 @@ class FileManager @Inject constructor(
         return File(tempVideoDir, "temp_vid_${sessionId}_$timestamp.mp4")
     }
 
+    fun getVideoChunkFile(sessionId: String, timestamp: Long): File {
+        return File(sessionMediaDir, "chunk_${sessionId}_$timestamp.mp4")
+    }
+
     fun getHighlightVideoFile(sessionId: String, originalName: String): File {
         return File(sessionMediaDir, "highlight_${sessionId}_$originalName")
     }

@@ -29,8 +29,10 @@ fun InvestigationReportView(
     isPlaying: Boolean = false,
     isTtsLoading: Boolean = false,
     isReplayGenerating: Boolean = false,
+    showDebugActions: Boolean = false,
     onPlayClick: () -> Unit = {},
     onRegenerateClick: () -> Unit = {},
+    onReanalyzeClick: () -> Unit = {},
     onVideoClick: (String, String?) -> Unit = { _, _ -> }
 ) {
     Box(modifier = Modifier.fillMaxSize()) {
@@ -70,6 +72,15 @@ fun InvestigationReportView(
                                 modifier = Modifier.fillMaxWidth(),
                                 enabled = !isReplayGenerating
                             )
+                            if (showDebugActions) {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                NoirButton(
+                                    text = "RE-ANALYZE WITH GEMINI",
+                                    onClick = onReanalyzeClick,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    enabled = !isReplayGenerating
+                                )
+                            }
                         }
                     }
                 }

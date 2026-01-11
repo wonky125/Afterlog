@@ -148,17 +148,19 @@ object GeminiPromptBuilder {
             }
             
             # CRITICAL RULES FOR highlight_segments (MANDATORY)
-            - You MUST output exactly 2-5 highlight segments. This field is REQUIRED and MUST NOT be empty.
+            - You MUST output exactly 5-10 highlight segments. This field is REQUIRED and MUST NOT be empty.
             - start_sec and end_sec are REQUIRED numbers representing seconds from session start.
-            - end_sec MUST be greater than start_sec, with each segment lasting 8-30 seconds.
+            - end_sec MUST be greater than start_sec, with each segment lasting 10-30 seconds.
+            - **SEMANTIC BOUNDARIES**: Ensure each segment starts slightly before a sentence/reaction and ends slightly after it concludes. NEVER cut mid-sentence.
             - Segments should NOT overlap with each other.
-            - "reason" MUST be specific (e.g., "Critical fail on Sanity?”table erupts", "Keeper reveals monster?”players scream").
+            - "reason" MUST be specific (e.g., "Critical fail on Sanity—table erupts", "Keeper reveals monster—players scream").
             - Prioritize: Sanity losses, critical rolls, monster reveals, player outbursts.
-            - NEVER return an empty highlight_segments array. Always provide at least 2 segments.
+            - **DURATIONAL BUDGET**: Aim for a total highlight duration under 240 seconds (4 minutes). Prioritize the most critical narrative beats from start to finish.
+            - NEVER return an empty highlight_segments array. Always provide at least 5 segments.
             
             # CRITICAL RULES FOR article (MANDATORY)
             - Base ONLY on observable facts from video/audio
-            - Follow the arc: Case Opening ??Investigation ??Confrontation ??Case Status
+            - Follow the arc: Case Opening → Investigation → Confrontation → Case Status
             - Blend Investigator actions with real player reactions at the table
             - Include actual dice results, actual dialogue, actual Keeper narration
             """.trimIndent()
@@ -191,17 +193,19 @@ object GeminiPromptBuilder {
             }
             
             # CRITICAL RULES FOR highlight_segments (MANDATORY)
-            - You MUST output exactly 2-5 highlight segments. This field is REQUIRED and MUST NOT be empty.
+            - You MUST output exactly 5-10 highlight segments. This field is REQUIRED and MUST NOT be empty.
             - start_sec and end_sec are REQUIRED numbers representing seconds from session start.
-            - end_sec MUST be greater than start_sec, with each segment lasting 8-30 seconds.
+            - end_sec MUST be greater than start_sec, with each segment lasting 10-30 seconds.
+            - **SEMANTIC BOUNDARIES**: Ensure each segment captures the full context of a reaction or dialogue. NEVER cut off a player mid-sentence.
             - Segments should NOT overlap with each other.
-            - "reason" MUST be specific (e.g., "Critical success on Spot Hidden?”clue discovered", "Keeper describes the creature?”table screams").
+            - "reason" MUST be specific (e.g., "Critical success on Spot Hidden—clue discovered", "Keeper describes the creature—table screams").
             - Prioritize: Sanity losses, fumbles, criticals, monster reveals, player meltdowns.
-            - NEVER return an empty highlight_segments array. Always provide at least 2 segments.
+            - NEVER return an empty highlight_segments array. Always provide at least 5 segments.
             
             # CRITICAL RULES FOR article (MANDATORY)
             - Base ONLY on observable facts from video/audio
             - Follow arc: Case Opening ??Investigation ??Confrontation ??Case Status
+            - **DURATIONAL BUDGET**: Your selected highlight segments should ideally total under 240 seconds (4 minutes) to ensure the full narrative arc fits in the final replay.
             - Blend Investigator in-game actions with real player reactions
             - Quote actual table talk ("'I'm NOT going in there!' / 'You have to roll.'")
             - Include real dice results and their consequences
@@ -281,8 +285,9 @@ object GeminiPromptBuilder {
             }
 
             # CRITICAL RULES
-            - You MUST output 2-5 segments. NEVER return empty array.
-            - Each segment MUST be 8-30 seconds long.
+            - You MUST output 5-10 segments. NEVER return empty array.
+            - Each segment MUST be 10-30 seconds long.
+            - **SEMANTIC BOUNDARIES**: Captured segments must include the full lead-up and conclusion of a major moment. Do not truncate dialogue.
             - Segments should NOT overlap.
             - "reason" field MUST describe WHAT happened (e.g., "Player screams after dice roll", "Group erupts in laughter").
             - If no clear highlights exist, select moments with the most audio activity or player movement.

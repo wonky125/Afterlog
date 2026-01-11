@@ -12,6 +12,7 @@ import com.hackathon.afterlog.feature.report.components.ErrorView
 import com.hackathon.afterlog.feature.report.components.RawTextFallbackView
 import com.hackathon.afterlog.feature.report.components.InvestigationReportView
 import com.hackathon.afterlog.feature.report.debug.DebugConfig
+import com.hackathon.afterlog.BuildConfig
 import com.hackathon.afterlog.feature.result.GameResultViewModel
 import com.hackathon.afterlog.feature.result.ResultUiState
 import com.hackathon.afterlog.data.local.entities.MediaType
@@ -108,6 +109,7 @@ fun ReportDetailScreen(
                             isPlaying = isPlaying,
                             isTtsLoading = isTtsLoading,
                             isReplayGenerating = state.isReplayGenerating,
+                            showDebugActions = BuildConfig.DEBUG || DebugConfig.USE_MOCK_DATA,
                             onPlayClick = {
                                 val textToRead = """
                                     ${state.report.headline}. 
@@ -119,6 +121,9 @@ fun ReportDetailScreen(
                             },
                             onRegenerateClick = {
                                 viewModel.regenerateReplay(sessionId)
+                            },
+                            onReanalyzeClick = {
+                                viewModel.loadSessionData(sessionId)
                             },
                             onVideoClick = { path, subtitle ->
                                 onNavigateToVideo(path, subtitle)
