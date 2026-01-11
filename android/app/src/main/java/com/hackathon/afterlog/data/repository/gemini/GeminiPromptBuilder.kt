@@ -155,11 +155,12 @@ object GeminiPromptBuilder {
             - Segments should NOT overlap with each other.
             - "reason" MUST be specific (e.g., "Critical fail on Sanity—table erupts", "Keeper reveals monster—players scream").
             - Prioritize: Sanity losses, critical rolls, monster reveals, player outbursts.
+            - **DURATIONAL BUDGET**: Aim for a total highlight duration under 240 seconds (4 minutes). Prioritize the most critical narrative beats from start to finish.
             - NEVER return an empty highlight_segments array. Always provide at least 5 segments.
             
+            # CRITICAL RULES FOR article (MANDATORY)
             - Base ONLY on observable facts from video/audio
-            - Follow the arc: Case Opening ??Investigation ??Confrontation ??Case Status
-            - **DURATIONAL BUDGET**: Aim for a total highlight duration under 240 seconds (4 minutes). Prioritize the most critical narrative beats from start to finish.
+            - Follow the arc: Case Opening → Investigation → Confrontation → Case Status
             - Blend Investigator actions with real player reactions at the table
             - Include actual dice results, actual dialogue, actual Keeper narration
             """.trimIndent()

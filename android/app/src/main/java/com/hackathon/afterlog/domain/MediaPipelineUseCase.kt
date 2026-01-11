@@ -777,11 +777,24 @@ class MediaPipelineUseCase @Inject constructor(
         val sorted = segments.sortedBy { it.startMs }
         val selected = mutableSetOf<VideoSegment>()
 
-        // 1. Preservation: Always include the first and last segments to maintain Intro/Outro arc
+        // 1. Preservation: Include first and last segments to maintain Intro/Outro arc (if they fit)
         val first = sorted.first()
         val last = sorted.last()
-        selected.add(first)
-        if (last != first) selected.add(last)
+        
+        val preservedDuration = if (last != first) {
+            first.durationMs + last.durationMs
+        } else {
+            first.durationMs
+        }
+        
+        // Only preserve first/last if they don't exceed the budget alone
+        if (preservedDuration <= maxDurationMs) {
+            selected.add(first)
+            if (last != first) selected.add(last)
+        } else {
+            Log.w(TAG, "First+last segments alone ($preservedDuration ms) exceed limit; selecting only first segment")
+            selected.add(first)
+        }
 
         var currentTotal = selected.sumOf { it.durationMs }
 
@@ -860,7 +873,6 @@ class MediaPipelineUseCase @Inject constructor(
                 val overlapDuration = overlapEnd - overlapStart
                 if (overlapDuration <= 500L) continue // Too short to be a highlight
 
-                matched = true
                 val clipStartMs = overlapStart - segStart
                 val clipEndMs = clipStartMs + overlapDuration
                 val trimResult = videoStitcher.trimVideoToWindow(
@@ -875,6 +887,7 @@ class MediaPipelineUseCase @Inject constructor(
                     continue
                 }
 
+                matched = true  // Only set after successful trim
                 trimmedSegments.add(
                     VideoSegment(
                         file = trimmedFile,
