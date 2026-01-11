@@ -543,10 +543,10 @@ class VideoStitcher @Inject constructor(
             val channels = 1
             val byteRate = sampleRate * channels * 2
             val dataLen = pcmFile.length()
-            // Check for potential overflow, though unlikely for mobile recordings (2GB limit for Wav)
-            if (dataLen > Int.MAX_VALUE - 36) {
-                 Log.e(TAG, "PCM file too large for standard WAV header: $dataLen")
-                 return null
+            val maxDataLen = 0xFFFFFFFFL - 36
+            if (dataLen <= 0L || dataLen > maxDataLen) {
+                Log.e(TAG, "PCM file too large for WAV header: $dataLen")
+                return null
             }
             val totalDataLen = dataLen + 36
 
@@ -767,7 +767,7 @@ class VideoStitcher @Inject constructor(
             if (parts.size < 2) continue
 
             val startMs = parseSrtTimestamp(parts[0].trim())
-            val endPart = parts[1].trim().split(" ").firstOrNull().orEmpty()
+            val endPart = parts[1].trim().split(Regex("\\s+")).firstOrNull().orEmpty()
             val endMs = parseSrtTimestamp(endPart)
 
             val textLines = lines.drop(timeLineIndex + 1)

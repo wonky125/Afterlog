@@ -164,9 +164,12 @@ class VideoManager @Inject constructor(
                             if (!recordEvent.hasError()) {
                                 Log.d("VideoManager", "Finalized chunk: ${tempFile.name}")
                                 // Add to buffer ONLY when file is complete and safe (MP4 header written)
-                                currentScope?.launch { 
-                                    handleNewChunk(tempFile) 
-                                } 
+                                val scope = currentScope
+                                if (scope != null && scope.isActive) {
+                                    scope.launch {
+                                        handleNewChunk(tempFile)
+                                    }
+                                }
                             } else {
                                 // If error, file might be partial.
                                 Log.e("VideoManager", "Video capture error: ${recordEvent.error}")
@@ -452,7 +455,12 @@ class VideoManager @Inject constructor(
         Log.d("VideoManager", "Video recording stopped")
         // Cleanup old buffer files to save space
         activeRecording = null
-        currentScope?.launch(Dispatchers.IO) { fileManager.clearTempFiles() } ?: fileManager.clearTempFiles()
+        val scope = currentScope
+        if (scope != null && scope.isActive) {
+            scope.launch(Dispatchers.IO) { fileManager.clearTempFiles() }
+        } else {
+            fileManager.clearTempFiles()
+        }
         // Note: We don't delete files here to allow post-session analysis if needed, 
         // but for safety we can clear the memory reference.
         tempBuffer.clear()

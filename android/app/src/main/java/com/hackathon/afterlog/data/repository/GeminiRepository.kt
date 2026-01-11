@@ -169,6 +169,10 @@ class GeminiRepository @Inject constructor(
     ): List<CaptionLine> = withContext(Dispatchers.IO) {
         try {
             val audioData = uploadAudioToGemini(audioFile)
+            if (audioData == null) {
+                Log.w("GeminiRepo", "Audio upload failed, skipping caption generation.")
+                return@withContext emptyList()
+            }
 
             val prompt = """
                 You are a 1920s noir journalist writing ultra-short captions for a newsreel.
@@ -197,9 +201,7 @@ class GeminiRepository @Inject constructor(
             """.trimIndent()
 
             val inputContent = content {
-                if (audioData != null) {
-                    fileData(uri = audioData.first, mimeType = audioData.second)
-                }
+                fileData(uri = audioData.first, mimeType = audioData.second)
                 text(prompt)
             }
 

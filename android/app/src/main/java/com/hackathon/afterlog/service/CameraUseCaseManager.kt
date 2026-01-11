@@ -164,11 +164,19 @@ class CameraUseCaseManager @Inject constructor(
 
     private fun getDisplayRotation(): Int {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            return context.display?.rotation ?: Surface.ROTATION_0
+            val rotation = context.display?.rotation
+            if (rotation == null) {
+                Log.w(TAG, "Display rotation unavailable, defaulting to ROTATION_0")
+            }
+            return rotation ?: Surface.ROTATION_0
         }
         val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as? WindowManager
         @Suppress("DEPRECATION")
-        return windowManager?.defaultDisplay?.rotation ?: Surface.ROTATION_0
+        val rotation = windowManager?.defaultDisplay?.rotation
+        if (rotation == null) {
+            Log.w(TAG, "DefaultDisplay rotation unavailable, defaulting to ROTATION_0")
+        }
+        return rotation ?: Surface.ROTATION_0
     }
 
     fun shutdown() {

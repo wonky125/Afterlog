@@ -16,6 +16,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
@@ -154,18 +155,20 @@ class GameResultViewModel @Inject constructor(
                         )
 
                         val assets = replayResult.getOrNull()
-                        if (assets != null) {
-                            val currentState = _uiState.value
-                            if (currentState is ResultUiState.Success) {
-                                _uiState.value = currentState.copy(
-                                    replayVideoPath = assets.videoFile.absolutePath,
-                                    subtitlePath = assets.subtitleFile?.absolutePath,
-                                    isReplayGenerating = false
-                                )
+                        _uiState.update { state ->
+                            if (state is ResultUiState.Success) {
+                                if (assets != null) {
+                                    state.copy(
+                                        replayVideoPath = assets.videoFile.absolutePath,
+                                        subtitlePath = assets.subtitleFile?.absolutePath,
+                                        isReplayGenerating = false
+                                    )
+                                } else {
+                                    state.copy(isReplayGenerating = false)
+                                }
+                            } else {
+                                state
                             }
-                        } else if (_uiState.value is ResultUiState.Success) {
-                            val current = _uiState.value as ResultUiState.Success
-                            _uiState.value = current.copy(isReplayGenerating = false)
                         }
                     }
                 }
@@ -228,18 +231,20 @@ class GameResultViewModel @Inject constructor(
             )
 
             val assets = replayResult.getOrNull()
-            if (assets != null) {
-                val updatedState = _uiState.value
-                if (updatedState is ResultUiState.Success) {
-                    _uiState.value = updatedState.copy(
-                        replayVideoPath = assets.videoFile.absolutePath,
-                        subtitlePath = assets.subtitleFile?.absolutePath,
-                        isReplayGenerating = false
-                    )
+            _uiState.update { state ->
+                if (state is ResultUiState.Success) {
+                    if (assets != null) {
+                        state.copy(
+                            replayVideoPath = assets.videoFile.absolutePath,
+                            subtitlePath = assets.subtitleFile?.absolutePath,
+                            isReplayGenerating = false
+                        )
+                    } else {
+                        state.copy(isReplayGenerating = false)
+                    }
+                } else {
+                    state
                 }
-            } else if (_uiState.value is ResultUiState.Success) {
-                val updatedState = _uiState.value as ResultUiState.Success
-                _uiState.value = updatedState.copy(isReplayGenerating = false)
             }
         }
     }

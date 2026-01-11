@@ -308,8 +308,14 @@ class MediaPipelineUseCase @Inject constructor(
             return null
         }
 
+        val srtContent = buildSrtTextFromCues(finalCues)
+        if (srtContent.isBlank()) {
+            Log.w(TAG, "Generated SRT content is empty for session $sessionId")
+            return null
+        }
         val subtitleFile = File(context.filesDir, "replay_${sessionId}.srt")
-        subtitleFile.writeText(buildSrtTextFromCues(finalCues))
+        subtitleFile.parentFile?.mkdirs()
+        subtitleFile.writeText(srtContent)
         localRepository.deleteLogsBySessionAndType(sessionId, MediaType.SUBTITLE)
         localRepository.logMedia(
             sessionId = sessionId,
@@ -681,10 +687,16 @@ class MediaPipelineUseCase @Inject constructor(
 
             val durationMs = try {
                 val retriever = MediaMetadataRetriever()
-                retriever.setDataSource(file.absolutePath)
-                val dur = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
-                retriever.release()
-                dur
+                try {
+                    retriever.setDataSource(file.absolutePath)
+                    retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+                } finally {
+                    try {
+                        retriever.release()
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Failed to release retriever for ${file.name}", e)
+                    }
+                }
             } catch (e: Exception) {
                 0L
             }
