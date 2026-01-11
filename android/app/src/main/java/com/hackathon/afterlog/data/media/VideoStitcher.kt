@@ -381,6 +381,62 @@ class VideoStitcher @Inject constructor(
             Result.failure(result.exceptionOrNull() ?: Exception("Video trim failed."))
         }
     }
+
+    /**
+     * Trims a video to the specified window using Transformer clipping.
+     */
+    suspend fun trimVideoToWindow(
+        inputVideo: File,
+        startMs: Long,
+        endMs: Long,
+        outputSessionId: String,
+        outputLabel: String
+    ): Result<File> = withContext(Dispatchers.IO) {
+        if (!inputVideo.exists()) {
+            return@withContext Result.failure(
+                IllegalArgumentException("Input video missing: ${inputVideo.absolutePath}")
+            )
+        }
+
+        val durationMs = extractDurationMs(inputVideo)
+        if (durationMs == null || durationMs <= 0L) {
+            return@withContext Result.failure(
+                IllegalStateException("Unknown duration for ${inputVideo.name}")
+            )
+        }
+
+        val safeStart = startMs.coerceAtLeast(0L).coerceAtMost(durationMs)
+        val safeEnd = endMs.coerceAtLeast(safeStart).coerceAtMost(durationMs)
+        if (safeEnd <= safeStart) {
+            return@withContext Result.failure(
+                IllegalArgumentException("Invalid trim window: $safeStart-$safeEnd")
+            )
+        }
+
+        val outputFile = File(context.filesDir, "replay_${outputSessionId}_${outputLabel}.mp4")
+        if (outputFile.exists()) outputFile.delete()
+
+        val clipping = ClippingConfiguration.Builder()
+            .setStartPositionMs(safeStart)
+            .setEndPositionMs(safeEnd)
+            .build()
+
+        val mediaItem = MediaItem.Builder()
+            .setUri(inputVideo.toURI().toString())
+            .setClippingConfiguration(clipping)
+            .build()
+
+        val editedItem = EditedMediaItem.Builder(mediaItem).build()
+        val composition = Composition.Builder(EditedMediaItemSequence(editedItem)).build()
+
+        val result = executeTransformation(composition, outputFile)
+        if (result.isSuccess && outputFile.exists()) {
+            Log.d(TAG, "Trimmed window ${safeStart}-${safeEnd}ms: ${outputFile.absolutePath}")
+            Result.success(outputFile)
+        } else {
+            Result.failure(result.exceptionOrNull() ?: Exception("Video trim failed."))
+        }
+    }
     
     /**
      * Builds a video sequence from multiple files for concatenation.

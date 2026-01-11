@@ -12,6 +12,7 @@ import com.hackathon.afterlog.data.repository.LocalRepository
 import com.hackathon.afterlog.data.repository.TtsRepository
 import com.hackathon.afterlog.data.local.entities.MediaType
 import com.hackathon.afterlog.data.local.entities.MediaLogEntity
+import com.hackathon.afterlog.data.model.HighlightSegment
 import com.hackathon.afterlog.data.model.PerspectiveGuideConfig
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -161,7 +162,8 @@ class MediaPipelineUseCase @Inject constructor(
      */
     suspend fun generateReplayWithNarration(
         sessionId: String,
-        narrationText: String
+        narrationText: String,
+        highlightSegments: List<HighlightSegment> = emptyList()
     ): Result<ReplayAssets> = withContext(Dispatchers.IO) {
         Log.d(TAG, "Starting replay generation (narration provided) for session: $sessionId")
 
@@ -187,7 +189,12 @@ class MediaPipelineUseCase @Inject constructor(
                 return@withContext Result.failure(IllegalStateException("TTS Synthesis failed."))
             }
 
-            val selectedSegments = resolveHighlightSegments(sessionId, videos, sessionStart)
+            val selectedSegments = resolveHighlightSegments(
+                sessionId = sessionId,
+                videos = videos,
+                sessionStart = sessionStart,
+                geminiHighlights = highlightSegments
+            )
             val finalVideo = buildFinalVideo(
                 sessionId = sessionId,
                 videos = videos,
@@ -535,18 +542,19 @@ class MediaPipelineUseCase @Inject constructor(
 
         Log.d(TAG, "Segments: highlights=${highlightVideos.size}, totalVideoFiles=${allVideoFiles.size}")
 
-        if (highlightVideos.isNotEmpty()) {
-            val segments = if (selectedHighlightSegments.isNotEmpty()) {
-                selectedHighlightSegments
-            } else {
-                buildVideoSegments(highlightVideos, sessionStart)
-            }
+        val segments = when {
+            selectedHighlightSegments.isNotEmpty() -> selectedHighlightSegments
+            highlightVideos.isNotEmpty() -> buildVideoSegments(highlightVideos, sessionStart)
+            else -> emptyList()
+        }
+
+        if (segments.isNotEmpty()) {
             Log.d(
                 TAG,
                 "Video segments=${segments.size}, sessionStart=$sessionStart"
             )
-            val highlightFiles = segments.map { it.file }.filter { it.exists() }
-            if (highlightFiles.isNotEmpty()) {
+            val segmentFiles = segments.map { it.file }.filter { it.exists() }
+            if (segmentFiles.isNotEmpty()) {
                 val pcmFile = audioLog?.let { File(it.filePath) }?.takeIf { it.exists() }
 
                 val audioStartOffsetMs = if (audioLog != null && sessionStart != null) {
@@ -561,7 +569,7 @@ class MediaPipelineUseCase @Inject constructor(
                     }
                     Log.d(TAG, "Audio clips=${clips.size} startOffset=$audioStartOffsetMs pcmPath=${pcmFile.absolutePath}")
                     videoStitcher.stitchVideosWithAudioSegments(
-                        videoChunks = highlightFiles,
+                        videoChunks = segmentFiles,
                         audioFile = pcmFile,
                         audioStartOffsetMs = audioStartOffsetMs,
                         audioClips = clips,
@@ -569,7 +577,7 @@ class MediaPipelineUseCase @Inject constructor(
                     )
                 } else {
                     videoStitcher.stitchVideos(
-                        videoChunks = highlightFiles,
+                        videoChunks = segmentFiles,
                         narrationAudio = narrationAudio,
                         outputSessionId = sessionId
                     )
@@ -577,7 +585,7 @@ class MediaPipelineUseCase @Inject constructor(
 
                 return stitchResult.getOrNull()
             } else {
-                Log.w(TAG, "Highlight logs present but no valid files; falling back to non-highlight path.")
+                Log.w(TAG, "Selected segments present but no valid files; falling back to non-highlight path.")
             }
         }
 
@@ -628,6 +636,167 @@ class MediaPipelineUseCase @Inject constructor(
         }
         val segments = buildVideoSegments(highlightVideos, sessionStart)
         return selectSegmentsByImportance(sessionId, segments)
+    }
+
+    private suspend fun resolveHighlightSegments(
+        sessionId: String,
+        videos: List<MediaLogEntity>,
+        sessionStart: Long?,
+        geminiHighlights: List<HighlightSegment>
+    ): List<VideoSegment> {
+        val baseSegments = if (geminiHighlights.isEmpty()) {
+            resolveHighlightSegments(sessionId, videos, sessionStart)
+        } else {
+            val trimmed = buildSegmentsFromGeminiHighlights(
+                sessionId = sessionId,
+                videos = videos,
+                sessionStart = sessionStart,
+                geminiHighlights = geminiHighlights
+            )
+            if (trimmed.isNotEmpty()) trimmed else resolveHighlightSegments(sessionId, videos, sessionStart)
+        }
+
+        // Apply Duration Limiting (Max 4 minutes)
+        return limitSegmentsByDuration(sessionId, baseSegments, MAX_REPLAY_DURATION_MS)
+    }
+
+    private suspend fun limitSegmentsByDuration(
+        sessionId: String,
+        segments: List<VideoSegment>,
+        maxDurationMs: Long
+    ): List<VideoSegment> {
+        if (segments.isEmpty()) return segments
+        val totalDuration = segments.sumOf { it.durationMs }
+        if (totalDuration <= maxDurationMs) return segments.sortedBy { it.startMs }
+
+        Log.d(TAG, "Replay duration ($totalDuration ms) exceeds limit ($maxDurationMs ms). Applying narrative-aware limiting.")
+        
+        val sorted = segments.sortedBy { it.startMs }
+        val selected = mutableSetOf<VideoSegment>()
+
+        // 1. Preservation: Always include the first and last segments to maintain Intro/Outro arc
+        val first = sorted.first()
+        val last = sorted.last()
+        selected.add(first)
+        if (last != first) selected.add(last)
+
+        var currentTotal = selected.sumOf { it.durationMs }
+
+        // 2. Rank middle segments by "excitement" (decibel peaks + motion)
+        val middleSegments = sorted.filter { it != first && it != last }
+        if (middleSegments.isNotEmpty()) {
+            val logs = localRepository.getSessionLogs(sessionId)
+            val screamEvents = logs.filter { it.type == MediaType.SCREAM_EVENT && it.decibel != null }
+            val guide = localRepository.getPerspectiveGuide(sessionId)
+
+            val ranked = middleSegments.map { segment ->
+                val score = computeSegmentScore(segment, screamEvents, guide)
+                RankedSegment(segment = segment, score = score)
+            }.sortedByDescending { it.score }
+
+            // 3. Fill the remaining time budget with the most intense moments
+            for (entry in ranked) {
+                if (currentTotal + entry.segment.durationMs <= maxDurationMs) {
+                    selected.add(entry.segment)
+                    currentTotal += entry.segment.durationMs
+                }
+            }
+        }
+
+        Log.d(TAG, "Final narrative segments: ${selected.size} items, total ${currentTotal}ms")
+        return selected.sortedBy { it.startMs }
+    }
+
+    private suspend fun buildSegmentsFromGeminiHighlights(
+        sessionId: String,
+        videos: List<MediaLogEntity>,
+        sessionStart: Long?,
+        geminiHighlights: List<HighlightSegment>
+    ): List<VideoSegment> {
+        if (sessionStart == null) {
+            Log.w(TAG, "Gemini highlight mapping skipped: sessionStart missing ($sessionId)")
+            return emptyList()
+        }
+
+        val baseLogs = videos.filter { it.type == MediaType.VIDEO_CHUNK }
+            .ifEmpty { videos.filter { it.type == MediaType.VIDEO_HIGHLIGHT } }
+        if (baseLogs.isEmpty()) {
+            Log.w(TAG, "Gemini highlight mapping skipped: no video chunks ($sessionId)")
+            return emptyList()
+        }
+
+        val baseSegments = buildVideoSegments(baseLogs, sessionStart)
+        if (baseSegments.isEmpty()) {
+            Log.w(TAG, "Gemini highlight mapping skipped: no base segments ($sessionId)")
+            return emptyList()
+        }
+
+        val windows = geminiHighlights.mapNotNull { highlight ->
+            // Add 1.5s padding to front and back for context
+            val paddingMs = 1500L
+            val startMs = (highlight.startSec * 1000.0).toLong().coerceAtLeast(0L) - paddingMs
+            val endMs = (highlight.endSec * 1000.0).toLong().coerceAtLeast(0L) + paddingMs
+            
+            val safeStartMs = startMs.coerceAtLeast(0L)
+            if (endMs <= safeStartMs) null else Pair(safeStartMs, endMs)
+        }.sortedBy { it.first }
+
+        if (windows.isEmpty()) {
+            Log.w(TAG, "Gemini highlight mapping skipped: no valid windows ($sessionId)")
+            return emptyList()
+        }
+
+        val trimmedSegments = mutableListOf<VideoSegment>()
+        for ((windowStart, windowEnd) in windows) {
+            var matched = false
+            for (segment in baseSegments) {
+                val segStart = segment.startMs
+                val segEnd = segStart + segment.durationMs.coerceAtLeast(0L)
+                val overlapStart = maxOf(segStart, windowStart)
+                val overlapEnd = minOf(segEnd, windowEnd)
+                val overlapDuration = overlapEnd - overlapStart
+                if (overlapDuration <= 500L) continue // Too short to be a highlight
+
+                matched = true
+                val clipStartMs = overlapStart - segStart
+                val clipEndMs = clipStartMs + overlapDuration
+                val trimResult = videoStitcher.trimVideoToWindow(
+                    inputVideo = segment.file,
+                    startMs = clipStartMs,
+                    endMs = clipEndMs,
+                    outputSessionId = sessionId,
+                    outputLabel = "gemini_${overlapStart}_${segment.file.nameWithoutExtension}"
+                )
+                val trimmedFile = trimResult.getOrNull()
+                if (trimmedFile == null || !trimmedFile.exists()) {
+                    continue
+                }
+
+                trimmedSegments.add(
+                    VideoSegment(
+                        file = trimmedFile,
+                        startMs = overlapStart,
+                        durationMs = overlapDuration,
+                        absoluteStartMs = segment.absoluteStartMs + clipStartMs
+                    )
+                )
+            }
+
+            if (!matched) {
+                Log.w(
+                    TAG,
+                    "Gemini window unmatched: ${windowStart}-${windowEnd}ms ($sessionId)"
+                )
+            }
+        }
+
+        if (trimmedSegments.isEmpty()) {
+            Log.w(TAG, "Gemini highlight mapping produced no trimmed segments ($sessionId)")
+        } else {
+            Log.d(TAG, "Gemini highlight mapping trimmed ${trimmedSegments.size} segments ($sessionId)")
+        }
+
+        return trimmedSegments.sortedBy { it.startMs }
     }
 
 /**

@@ -101,11 +101,16 @@ class GameResultViewModel @Inject constructor(
                     }
                 }
 
-                // 2. Identify "Highlight" videos
+                // 2. Identify video chunks for analysis (fallback to highlights if needed)
                 val videoFiles = logs
-                    .filter { it.filePath.contains("highlight") }
+                    .filter { it.type == MediaType.VIDEO_CHUNK }
                     .map { File(it.filePath) }
                     .filter { it.exists() }
+                    .ifEmpty {
+                        logs.filter { it.type == MediaType.VIDEO_HIGHLIGHT }
+                            .map { File(it.filePath) }
+                            .filter { it.exists() }
+                    }
                 
                 // 3. Find Audio File
                 val audioLog = logs.firstOrNull { it.filePath.endsWith(".pcm") }
@@ -151,7 +156,8 @@ class GameResultViewModel @Inject constructor(
                     viewModelScope.launch {
                         val replayResult = mediaPipelineUseCase.generateReplayWithNarration(
                             sessionId = replaySessionId,
-                            narrationText = narrationText
+                            narrationText = narrationText,
+                            highlightSegments = parsedReport.highlightSegments
                         )
 
                         val assets = replayResult.getOrNull()
@@ -227,7 +233,8 @@ class GameResultViewModel @Inject constructor(
         viewModelScope.launch {
             val replayResult = mediaPipelineUseCase.generateReplayWithNarration(
                 sessionId = actualSessionId,
-                narrationText = narrationText
+                narrationText = narrationText,
+                highlightSegments = report.highlightSegments
             )
 
             val assets = replayResult.getOrNull()

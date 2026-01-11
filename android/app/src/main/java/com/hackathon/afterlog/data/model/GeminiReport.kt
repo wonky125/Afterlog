@@ -1,5 +1,6 @@
 package com.hackathon.afterlog.data.model
 
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -10,6 +11,8 @@ data class GeminiReport(
     val article: String = "",         // Main narrative prose (2-3 paragraphs)
     val timeline: List<TimelineEvent>,
     val verdict: String,
+    @SerialName("highlight_segments")
+    val highlightSegments: List<HighlightSegment> = emptyList(),
     val imagePath: String? = null     // Path to the main evidence image
 )
 
