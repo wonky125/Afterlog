@@ -32,10 +32,10 @@ class GeminiAudioUtils(
                     val wavMimeType = "audio/wav"
                     Log.d("GeminiRepo", "Uploading converted audio: ${wavFile.name} ($wavMimeType)")
                     val uri = filesApiClient.uploadFile(wavFile, wavMimeType)
+                    if (!wavFile.delete()) {
+                        Log.w("GeminiRepo", "Failed to delete temp WAV: ${wavFile.absolutePath}")
+                    }
                     return if (uri != null) {
-                        if (!wavFile.delete()) {
-                            Log.w("GeminiRepo", "Failed to delete temp WAV: ${wavFile.absolutePath}")
-                        }
                         Log.d("GeminiRepo", "Audio upload SUCCESS. URI: $uri")
                         Pair(uri, wavMimeType)
                     } else {
@@ -53,7 +53,7 @@ class GeminiAudioUtils(
             }
         }
         
-        Log.d("GeminiRepo", "Uploading converted audio to Gemini: ${audioFile.name} ($mimeType)")
+        Log.d("GeminiRepo", "Uploading audio to Gemini: ${audioFile.name} ($mimeType)")
         val uri = filesApiClient.uploadFile(audioFile, mimeType) ?: return null
         
         Log.d("GeminiRepo", "Audio upload SUCCESS. URI: $uri")
@@ -119,7 +119,7 @@ class GeminiAudioUtils(
 
     private fun convertPcmToWav(pcmFile: File): File? {
         return try {
-            val wavFile = File(pcmFile.parent, pcmFile.nameWithoutExtension + ".wav")
+            val wavFile = File(context.cacheDir, pcmFile.nameWithoutExtension + ".wav")
             val dataLen = pcmFile.length()
             val maxDataLen = 0xFFFFFFFFL - 36
             if (dataLen <= 0L || dataLen > maxDataLen) {

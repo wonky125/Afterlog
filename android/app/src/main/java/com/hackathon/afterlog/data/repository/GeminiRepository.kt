@@ -20,7 +20,6 @@ import javax.inject.Singleton
 @Singleton
 class GeminiRepository @Inject constructor(
     private val generativeModel: GenerativeModel,
-    private val retryPolicy: GeminiRetryPolicy,
     private val audioUtils: GeminiAudioUtils,
     private val promptBuilder: GeminiPromptBuilder,
     private val parsers: GeminiParsers,
@@ -28,6 +27,8 @@ class GeminiRepository @Inject constructor(
     private val logUtils: GeminiLogUtils
 ) {
     data class CaptionLine(val startMs: Long, val endMs: Long, val text: String)
+
+    private val retryPolicy = GeminiRetryPolicy(generativeModel)
 
 
     suspend fun testConnection(): String = withContext(Dispatchers.IO) {
@@ -56,7 +57,7 @@ class GeminiRepository @Inject constructor(
             // Only abort if BOTH frames and audio are missing
             if (frames.isEmpty() && audioData == null) {
                 Log.w("GeminiRepo", "No evidence (video or audio) found. Aborting.")
-                return@withContext """{"headline":"NO EVIDENCE FOUND","summary":"The scene was empty.","atmosphere":"Silence.","timeline":[],"highlight_segments":[],"verdict":"Case closed?”nothing to report."}"""
+                return@withContext """{"headline":"NO EVIDENCE FOUND","summary":"The scene was empty.","atmosphere":"Silence.","timeline":[],"highlight_segments":[],"verdict":"Case closed - nothing to report."}"""
             }
 
             val prompt = promptBuilder.buildInvestigativePrompt(contextData, audioData != null, compact = false)
@@ -233,3 +234,5 @@ class GeminiRepository @Inject constructor(
     }
 
 }
+
+

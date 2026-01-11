@@ -41,7 +41,15 @@ object GeminiVideoUtils {
                             
                             if (bitmap != null) {
                                 // Simple resizing to save bandwidth/tokens (Gemini checks usually roughly 512px)
-                                val scaledForGemini = Bitmap.createScaledBitmap(bitmap, 512, 512, true) 
+                                val maxDim = maxOf(bitmap.width, bitmap.height)
+                                val scaledForGemini = if (maxDim > 0) {
+                                    val scale = 512f / maxDim
+                                    val scaledWidth = (bitmap.width * scale).toInt().coerceAtLeast(1)
+                                    val scaledHeight = (bitmap.height * scale).toInt().coerceAtLeast(1)
+                                    Bitmap.createScaledBitmap(bitmap, scaledWidth, scaledHeight, true)
+                                } else {
+                                    bitmap
+                                }
                                 if (bitmap != scaledForGemini) {
                                     bitmap.recycle()
                                 }

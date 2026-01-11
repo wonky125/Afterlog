@@ -7,7 +7,6 @@ import com.hackathon.afterlog.data.repository.gemini.GeminiAudioUtils
 import com.hackathon.afterlog.data.repository.gemini.GeminiLogUtils
 import com.hackathon.afterlog.data.repository.gemini.GeminiParsers
 import com.hackathon.afterlog.data.repository.gemini.GeminiPromptBuilder
-import com.hackathon.afterlog.data.repository.gemini.GeminiRetryPolicy
 import com.hackathon.afterlog.data.repository.gemini.GeminiVideoUtils
 import com.google.ai.client.generativeai.GenerativeModel
 import com.google.ai.client.generativeai.type.generationConfig
@@ -34,14 +33,6 @@ object GeminiModule {
                 maxOutputTokens = 4096
             }
         )
-    }
-
-    @Provides
-    @Singleton
-    fun provideGeminiRetryPolicy(
-        generativeModel: GenerativeModel
-    ): GeminiRetryPolicy {
-        return GeminiRetryPolicy(generativeModel)
     }
 
     @Provides
